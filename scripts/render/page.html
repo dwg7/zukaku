@@ -6,29 +6,37 @@
 <link rel="stylesheet" href="../../node_modules/maplibre-gl/dist/maplibre-gl.css">
 <style>
   html, body { margin: 0; padding: 0; background: #fff; }
-  /* Print margins (2026-08-31 redesign): title/index moved out of the map
-     area entirely, into a header band above the neatline, so they never sit
-     on top of map content. Top is taller than the other three sides to fit
-     that band; left/right are a little wider than bottom, doubling as
-     stapling allowance. Must stay in sync with docs/index.html's print CSS
-     (same numbers, ADR 0007 — this layout applies to both render paths). */
+  /* Print margins (2026-08-31 redesign, then uniform-15mm revision): the map
+     frame keeps nothing on top of its own content — title/index live in a
+     header band above the neatline, the scale bar lives in a footer band
+     below it. Uniform on all four sides. Must stay in sync with
+     docs/index.html's print CSS (same numbers, ADR 0007 — this layout
+     applies to both render paths). */
   #map {
     position: absolute;
-    top: 18mm; left: 12mm; right: 12mm; bottom: 8mm;
+    top: 15mm; left: 15mm; right: 15mm; bottom: 15mm;
     box-sizing: border-box;
     /* Neatline: marks exactly where the map frame ends, so the printed page
        reads unambiguously even if trimmed slightly off-square. */
     border: 0.75pt solid #000;
   }
-  /* Header band (top margin): title left, grid reference right. Both sit
-     above the neatline, never overlapping the map. */
+  /* Header band (top margin): title left, grid reference right. */
   #header {
     position: absolute;
-    top: 0; left: 12mm; right: 12mm; height: 18mm;
+    top: 0; left: 15mm; right: 15mm; height: 15mm;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
+  /* Footer band (bottom margin): scale bar. Compact — this band is no
+     taller than the header's. */
+  #footer {
+    position: absolute;
+    bottom: 0; left: 15mm; right: 15mm; height: 15mm;
+    display: flex;
+    align-items: center;
+  }
+  #footer .maplibregl-ctrl-scale { margin: 0; font-size: 3mm; }
   #brand, #label { font: bold 5mm/1 sans-serif; color: #222; }
   #label { text-align: right; } /* grid ref (A1, B2, ...) or "概要" */
 </style>
@@ -39,10 +47,11 @@
   <div id="brand"></div>
   <div id="label"></div>
 </div>
+<div id="footer"></div>
 <script type="module">
   // maplibre-gl v6 ships ESM-only (dist/maplibre-gl.mjs); there is no more
   // UMD bundle that attaches a global `maplibregl`.
-  import { Map as MapLibreMap, ScaleControl, NavigationControl } from "../../node_modules/maplibre-gl/dist/maplibre-gl.mjs";
+  import { Map as MapLibreMap, ScaleControl } from "../../node_modules/maplibre-gl/dist/maplibre-gl.mjs";
 
   const params = new URLSearchParams(location.search);
   const styleId = params.get("style") || "positron";
@@ -108,16 +117,14 @@
 
   const map = new MapLibreMap(mapOptions);
 
-  // Scale bar, bottom-left of each page. This is plain DOM (not the WebGL
-  // canvas), so it doesn't need the toDataURL() workaround below — Chromium's
-  // print-to-PDF renders ordinary HTML/CSS controls fine on its own.
+  // Scale bar. This is plain DOM (not the WebGL canvas), so it doesn't need
+  // the toDataURL() workaround below — Chromium's print-to-PDF renders
+  // ordinary HTML/CSS controls fine on its own. Relocated into #footer (the
+  // bottom margin, outside the neatline) once idle — see below. No compass:
+  // rotation is locked in the picker UI (docs/index.html) so north is always
+  // up, and "地図の内容の上に何も置かない" (put nothing on top of the map
+  // itself) extends to this control too, 2026-08-31.
   map.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
-
-  // North arrow, bottom-right: reusing MapLibre's built-in compass button
-  // (zoom buttons turned off) rather than drawing one from scratch. Bearing
-  // is always 0 (ADR 0004/CLAUDE.md scope has no rotation UI yet), so it
-  // simply points up — exactly what a static north arrow should do.
-  map.addControl(new NavigationControl({ showZoom: false, showCompass: true }), "bottom-right");
 
   map.on("error", (e) => {
     window.__zukakuError = String((e && e.error && e.error.message) || e);
@@ -199,10 +206,18 @@
     img.style.inset = "0";
     img.style.width = "100%";
     img.style.height = "100%";
-    // Appended inside #map (the 8mm-inset box) rather than body, so the
+    // Appended inside #map (the 15mm-inset box) rather than body, so the
     // snapshot lands exactly where the live canvas was, margin included.
     document.getElementById("map").appendChild(img);
     canvas.parentElement.style.display = "none";
+
+    // Move the scale bar out of the map frame entirely, into the footer
+    // band below the neatline (2026-08-31: "put nothing on top of the map
+    // itself"). A plain reparent, not a clone — it already reflects this
+    // page's zoom/latitude, and nothing needs to keep updating after this.
+    const scaleEl = map.getContainer().querySelector(".maplibregl-ctrl-scale");
+    if (scaleEl) document.getElementById("footer").appendChild(scaleEl);
+
     window.__zukakuReady = true;
   });
 </script>

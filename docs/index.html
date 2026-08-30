@@ -77,8 +77,10 @@
     border-radius: 6px;
   }
 
-  /* bottom-left: Make Atlas */
-  #make-atlas-panel {
+  /* bottom-left: action buttons. Print in Browser (ADR 0007) is the
+     mainstream path (blue/primary); Share (GitHub Actions, ADR 0006) and
+     JSON (local/Docker) are secondary (white), 2026-08-31. */
+  #action-panel {
     position: absolute;
     left: 12px;
     bottom: 12px;
@@ -95,25 +97,27 @@
     padding: 3px 8px;
     border-radius: 4px;
   }
-  #make-atlas {
-    padding: 10px 20px;
-    font-size: 14px;
+  .action-btn {
     font-weight: bold;
-    border: none;
     border-radius: 6px;
-    background: #2b6cb0;
-    color: #fff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     cursor: pointer;
   }
-  #print-in-browser, #download-json {
+  .action-btn.primary {
+    padding: 10px 20px;
+    font-size: 14px;
+    border: none;
+    background: #2b6cb0;
+    color: #fff;
+  }
+  .action-btn.secondary {
     padding: 4px 10px;
     font-size: 11px;
+    font-weight: normal;
     border: 1px solid #ccc;
-    border-radius: 4px;
     background: rgba(255, 255, 255, 0.92);
     color: #444;
-    cursor: pointer;
+    box-shadow: none;
   }
 
   /* Field-Papers-style page grid: fixed to the screen center, NOT to the map.
@@ -158,30 +162,22 @@
     .print-page.portrait { page: print-portrait; width: 210mm; height: 297mm; }
     .print-page.landscape { page: print-landscape; width: 297mm; height: 210mm; }
 
-    /* Print margins (2026-08-31 redesign): title/index live in a header band
-       above the neatline, never overlapping map content. Top is taller than
-       the other three sides to fit that band; left/right are a little wider
-       than bottom, doubling as stapling allowance. Numbers must match
-       scripts/render/page.html's #map/#header. */
+    /* Print margins (2026-08-31, uniform-15mm revision): the map frame keeps
+       nothing on top of its own content — title/index live in a header band
+       above the neatline, the scale bar lives in a footer band below it.
+       Numbers must match scripts/render/page.html's #map/#header/#footer. */
     .print-page .print-map {
       position: absolute;
-      top: 18mm; left: 12mm; right: 12mm; bottom: 8mm;
+      top: 15mm; left: 15mm; right: 15mm; bottom: 15mm;
       box-sizing: border-box;
       border: 0.75pt solid #000; /* neatline */
       overflow: hidden;
     }
     .print-page .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
-    .print-page .print-controls { position: absolute; inset: 0; pointer-events: none; }
-    /* MapLibre's own control DOM (ScaleControl/NavigationControl), cloned in
-       as static markup per page — see preparePrintPages(). Re-anchor it to
-       the map corners since its normal positioning depends on a live map
-       container that no longer exists once printed. */
-    .print-page .maplibregl-ctrl-bottom-left { position: absolute; left: 10mm; bottom: 10mm; }
-    .print-page .maplibregl-ctrl-bottom-right { position: absolute; right: 10mm; bottom: 10mm; }
 
     .print-page .print-header {
       position: absolute;
-      top: 0; left: 12mm; right: 12mm; height: 18mm;
+      top: 0; left: 15mm; right: 15mm; height: 15mm;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -190,6 +186,17 @@
       font: bold 5mm/1 sans-serif; color: #222;
     }
     .print-page .print-ref { text-align: right; }
+
+    /* Footer band (bottom margin): scale bar only — no compass (rotation is
+       locked in the picker UI, so north is always up and a compass would be
+       redundant; also "put nothing on top of the map itself", 2026-08-31). */
+    .print-page .print-footer {
+      position: absolute;
+      bottom: 0; left: 15mm; right: 15mm; height: 15mm;
+      display: flex;
+      align-items: center;
+    }
+    .print-page .print-footer .maplibregl-ctrl-scale { margin: 0; font-size: 3mm; }
   }
 </style>
 </head>
@@ -238,23 +245,28 @@
   <input id="title-input" type="text" placeholder="地図のタイトル" maxlength="60">
 </div>
 
-<!-- ADR 0005: this UI never runs the headless renderer itself (that's a
-     separate GitHub Actions / local batch step, ADR 0002/0003/0006). "Make
-     Atlas" opens GitHub's own pre-filled "create file" page (the user's own
-     logged-in session handles auth, nothing is embedded here) so submitting
-     a PR triggers the Actions workflow that runs scripts/render/atlas.js. -->
-<div id="make-atlas-panel">
+<!-- Three ways to turn the current selection into a PDF (2026-08-31: Print is
+     the mainstream path). Print in Browser (ADR 0007) renders and calls
+     window.print() right here, nothing leaves the tab. Share opens GitHub's
+     pre-filled "create file" page (ADR 0005/0006) — the user's own logged-in
+     session handles auth, nothing is embedded here — so submitting a PR
+     triggers the Actions workflow that runs scripts/render/atlas.js and
+     posts the PDF back to docs/responses/. JSON just downloads the page
+     spec for local/Docker use. -->
+<div id="action-panel">
   <div id="page-estimate"></div>
-  <button id="make-atlas">Make Atlas</button>
-  <button id="print-in-browser">Print in Browser</button>
-  <button id="download-json">Download JSON only</button>
+  <button id="print-btn" class="action-btn primary"
+    title="このブラウザで直接PDFを作成し、印刷ダイアログを開きます(Chromium系ブラウザ推奨)">Print</button>
+  <button id="share-btn" class="action-btn secondary"
+    title="GitHubに新規ファイル画面を開きます。コミット(PR)すると、Actionsが自動でPDFを生成してdocs/responses/に置きます">Share</button>
+  <button id="json-btn" class="action-btn secondary"
+    title="ページ仕様のJSONをダウンロードします(ローカル/Dockerでの実行向け)">JSON</button>
 </div>
 
 <script type="module">
 import {
   Map as MapLibreMap,
   ScaleControl,
-  NavigationControl,
 } from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
 
 const STARS = "https://stars.optgeo.org/style";
@@ -294,7 +306,17 @@ const map = new MapLibreMap({
   zoom: CITIES[state.city].zoom,
   // ADR 0004: no 3D. Same reasoning as the headless renderer (page.html).
   projection: "mercator",
+  // Rotation locked (2026-08-31 bug fix): computePages() builds each page's
+  // bbox as [nw.lng, se.lat, se.lng, nw.lat] from two unprojected screen
+  // corners, which is only a valid axis-aligned box when bearing is 0. A
+  // rotated map produced a garbled, "crushed" overview frame because that
+  // assumption silently broke. Simplest fix, per instruction: don't let the
+  // map rotate in the first place, rather than teach the bbox math (and the
+  // whole render pipeline) to handle arbitrary bearings.
+  dragRotate: false,
+  pitchWithRotate: false,
 });
+map.touchZoomRotate.disableRotation();
 
 window.__zukakuMap = map; // debugging aid
 window.__zukakuMapErrors = [];
@@ -486,8 +508,8 @@ function requestFilename() {
   return `docs/requests/atlas-${stamp}.json`;
 }
 
-const makeAtlasButton = document.getElementById("make-atlas");
-makeAtlasButton.addEventListener("click", () => {
+const shareButton = document.getElementById("share-btn");
+shareButton.addEventListener("click", () => {
   const pages = computePages();
   const url = githubCreateFileUrl(requestFilename(), JSON.stringify(pages));
   window.open(url, "_blank", "noopener");
@@ -534,8 +556,12 @@ async function preparePrintPages(pages) {
       attributionControl: false,
       fadeDuration: 0,
     });
+    // Scale bar only — no compass. Rotation is locked (state, above) so
+    // north is always up, making a compass redundant; and "put nothing on
+    // top of the map itself" (2026-08-31) extends to this control too, so
+    // it's relocated into a footer band below the neatline, not left
+    // floating over the map image.
     pageMap.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
-    pageMap.addControl(new NavigationControl({ showZoom: false, showCompass: true }), "bottom-right");
 
     await new Promise((resolve, reject) => {
       pageMap.on("error", (e) => reject(e.error || e));
@@ -551,13 +577,11 @@ async function preparePrintPages(pages) {
     // the same underlying Chromium print pipeline, just invoked via
     // window.print() instead of Playwright's page.pdf().
     const dataUrl = pageMap.getCanvas().toDataURL("image/png");
-    // MapLibre's own control markup (scale bar text, compass icon) — not
-    // user-supplied, safe to carry over as-is. Re-anchored to page corners
-    // by the @media print CSS above, since the live container it depended
-    // on for positioning is gone once this map is removed.
-    const controlsHTML = pageMap.getContainer().querySelector(
-      ".maplibregl-control-container"
-    ).innerHTML;
+    // The scale control's own markup (not user-supplied, safe to carry over
+    // as static HTML) — the live container it depended on for positioning
+    // is gone once this map is removed, so it's re-homed in .print-footer.
+    const scaleEl = pageMap.getContainer().querySelector(".maplibregl-ctrl-scale");
+    const scaleHTML = scaleEl ? scaleEl.outerHTML : "";
 
     pageMap.remove(); // free the WebGL context before starting the next page
     stage.remove();
@@ -581,17 +605,20 @@ async function preparePrintPages(pages) {
     }
     section.appendChild(header);
 
-    // Map box (neatline + snapshot + scale bar/compass).
+    // Map box: neatline + snapshot only, nothing else on top of it.
     const mapBox = document.createElement("div");
     mapBox.className = "print-map";
     const img = document.createElement("img");
     img.src = dataUrl;
     mapBox.appendChild(img);
-    const controls = document.createElement("div");
-    controls.className = "print-controls";
-    controls.innerHTML = controlsHTML;
-    mapBox.appendChild(controls);
     section.appendChild(mapBox);
+
+    // Footer band (below the neatline): scale bar — matches
+    // scripts/render/page.html's #footer.
+    const footer = document.createElement("div");
+    footer.className = "print-footer";
+    footer.innerHTML = scaleHTML;
+    section.appendChild(footer);
 
     printRoot.appendChild(section);
   }
@@ -647,7 +674,7 @@ function addOverviewGridLayers(pageMap, cells) {
   });
 }
 
-const printButton = document.getElementById("print-in-browser");
+const printButton = document.getElementById("print-btn");
 printButton.addEventListener("click", async () => {
   const pages = computePages();
   const original = printButton.textContent;
@@ -665,7 +692,7 @@ printButton.addEventListener("click", async () => {
   }
 });
 
-const downloadJsonButton = document.getElementById("download-json");
+const downloadJsonButton = document.getElementById("json-btn");
 downloadJsonButton.addEventListener("click", () => {
   const pages = computePages();
   downloadJSON("atlas-pages.json", pages);

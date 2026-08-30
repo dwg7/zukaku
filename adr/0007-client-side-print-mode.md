@@ -131,6 +131,19 @@ landscape、詳細ページはportraitという混在ケース)、`preferCSSPage
 - `docs/index.html`に「Print in Browser」ボタンを追加。
 - 新規ファイルは無し(既存の範囲指定UIに追記する形)。
 
+### ボタンの再編・Print主流化(2026-08-31)
+
+実際に使ってみたユーザーから「Print in Browserモードを主流にしたい」との評価が
+あった。3つのボタンを「Print」(Print in Browser、青=主要アクション)・
+「Share」(Make Atlas改め、GitHub PR起票、白=副次)・「JSON」(Download JSON only改め、
+白=副次)に整理し、それぞれに`title`属性でツールチップ(何をするボタンかの説明)を
+付けた。IDも`print-btn`/`share-btn`/`json-btn`に改名。
+
+印刷面のレイアウト再設計(マージン15mm均一化、方位記号廃止、回転ロック)は
+[ADR 0005](0005-range-selection-ui-interaction-model.md)を参照。この変更は
+`scripts/render/page.html`(Playwright/Actions経路)にも同一内容を適用しており、
+本ADRのPrint in Browser固有の変更ではない。
+
 ## 参考
 
 - MDN `page-orientation`: https://developer.mozilla.org/en-US/docs/Web/CSS/@page/page-orientation
