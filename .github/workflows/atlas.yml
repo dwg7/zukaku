@@ -2,16 +2,19 @@ name: Render atlas
 
 # ADR 0006: this workflow is how "properly used" zukaku turns a range-picker
 # request into a PDF, without needing a persistent server anywhere (ADR
-# 0002's whole point). It fires whenever a requests/*.json file lands on a
-# branch — normally via the GitHub "propose new file" flow the range-picker
+# 0002's whole point). It fires whenever a docs/requests/*.json file lands on
+# a branch — normally via the GitHub "propose new file" flow the range-picker
 # UI (docs/index.html) opens for the user.
 on:
   push:
     paths:
-      - "requests/*.json"
+      - "docs/requests/*.json"
   pull_request:
     paths:
-      - "requests/*.json"
+      - "docs/requests/*.json"
+
+permissions:
+  contents: write
 
 jobs:
   render:
@@ -23,32 +26,63 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.62.1-jammy
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       # No actions/setup-node step: the Playwright image ships Node.js
       # already (verified locally: v24.18.1 in v1.62.1-jammy), and it's new
       # enough for zukaku's code.
       - run: npm ci
 
-      - name: Find changed atlas requests
-        id: changed
-        uses: tj-actions/changed-files@v45
-        with:
-          files: requests/*.json
-
-      - name: Render each changed request to PDF
-        if: steps.changed.outputs.any_changed == 'true'
+      # Deliberately not using a "which files changed" action (tried
+      # tj-actions/changed-files; it failed to locate the git repo on `push`
+      # events specifically when run inside a `container:` job, though the
+      # identical setup worked fine on `pull_request` — verified 2026-08-30).
+      # Instead: skip any request that already has a matching response PDF.
+      # This is idempotent and self-limiting — docs/requests/ can accumulate
+      # indefinitely without every run re-rendering the whole backlog, since
+      # only requests missing a response actually cost anything.
+      - name: Render requests that don't have a response yet
+        shell: bash
+        id: render
         run: |
-          for f in ${{ steps.changed.outputs.all_changed_files }}; do
-            out="${f%.json}.pdf"
+          shopt -s nullglob
+          mkdir -p docs/responses
+          rendered=0
+          for f in docs/requests/*.json; do
+            base="$(basename "${f%.json}")"
+            out="docs/responses/${base}.pdf"
+            if [ -f "$out" ]; then
+              echo "skip $f (already have $out)"
+              continue
+            fi
             echo "Rendering $f -> $out"
             node scripts/render/atlas.js --pages "$f" --out "$out"
+            rendered=$((rendered + 1))
           done
+          echo "rendered=$rendered" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
-        if: steps.changed.outputs.any_changed == 'true'
+        if: steps.render.outputs.rendered != '0'
         with:
           name: atlas-pdfs
-          path: requests/*.pdf
+          path: docs/responses/*.pdf
           retention-days: 30
+          if-no-files-found: ignore
+
+      # Only commit new responses back on push (i.e. once a request is
+      # actually merged/pushed to a real branch, not on every PR revision) —
+      # that's what makes them show up at a stable GitHub Pages URL
+      # (dwg7.github.io/zukaku/responses/<name>.pdf). PR runs stay
+      # artifact-only, for a quick look before merging.
+      - name: Commit rendered responses
+        if: github.event_name == 'push' && steps.render.outputs.rendered != '0'
+        shell: bash
+        run: |
+          # Container jobs run git as a different uid than the checkout's
+          # file owner, which git refuses to touch by default ("not in a
+          # git directory" / dubious ownership) — verified 2026-08-30.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "zukaku-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/responses/*.pdf
+          git commit -m "Render ${{ steps.render.outputs.rendered }} atlas response(s) [skip ci]"
+          git push

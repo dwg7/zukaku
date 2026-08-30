@@ -1,5 +1,8 @@
 node_modules/
 *.pdf
+# docs/responses/ is the deliberate exception: those PDFs are committed so
+# GitHub Pages can serve them directly (ADR 0006).
+!docs/responses/*.pdf
 *.pmtiles
 *.mbtiles
 .DS_Store
