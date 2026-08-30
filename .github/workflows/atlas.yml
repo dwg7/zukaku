@@ -77,6 +77,10 @@ jobs:
         if: github.event_name == 'push' && steps.render.outputs.rendered != '0'
         shell: bash
         run: |
+          # Container jobs run git as a different uid than the checkout's
+          # file owner, which git refuses to touch by default ("not in a
+          # git directory" / dubious ownership) — verified 2026-08-30.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "zukaku-bot"
           git config user.email "actions@users.noreply.github.com"
           git add docs/responses/*.pdf
