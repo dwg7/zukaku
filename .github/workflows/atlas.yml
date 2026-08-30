@@ -23,36 +23,36 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.62.1-jammy
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history: tj-actions/changed-files failed to locate the repo
-          # on `push` events with a shallow fetch-depth (verified 2026-08-30,
-          # first real run) — a known rough edge with shallow clones on push,
-          # not just PR, events.
-          fetch-depth: 0
 
       # No actions/setup-node step: the Playwright image ships Node.js
       # already (verified locally: v24.18.1 in v1.62.1-jammy), and it's new
       # enough for zukaku's code.
       - run: npm ci
 
-      - name: Find changed atlas requests
-        id: changed
-        uses: tj-actions/changed-files@v45
-        with:
-          files: requests/*.json
-
-      - name: Render each changed request to PDF
-        if: steps.changed.outputs.any_changed == 'true'
+      # Deliberately not using a "which files changed" action (tried
+      # tj-actions/changed-files; it failed to locate the git repo on `push`
+      # events specifically when run inside a `container:` job, though the
+      # identical setup worked fine on `pull_request` — verified 2026-08-30,
+      # not worth chasing further). Rendering is idempotent and requests/ is
+      # meant to hold only a handful of disposable files (see
+      # requests/README.md), so just render everything present each run.
+      - name: Render every atlas request to PDF
         run: |
-          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+          shopt -s nullglob
+          files=(requests/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no requests/*.json files, nothing to render"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
             out="${f%.json}.pdf"
             echo "Rendering $f -> $out"
             node scripts/render/atlas.js --pages "$f" --out "$out"
           done
 
       - uses: actions/upload-artifact@v4
-        if: steps.changed.outputs.any_changed == 'true'
         with:
           name: atlas-pdfs
           path: requests/*.pdf
           retention-days: 30
+          if-no-files-found: ignore
