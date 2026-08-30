@@ -24,7 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          # Full history: tj-actions/changed-files failed to locate the repo
+          # on `push` events with a shallow fetch-depth (verified 2026-08-30,
+          # first real run) — a known rough edge with shallow clones on push,
+          # not just PR, events.
+          fetch-depth: 0
 
       # No actions/setup-node step: the Playwright image ships Node.js
       # already (verified locally: v24.18.1 in v1.62.1-jammy), and it's new
