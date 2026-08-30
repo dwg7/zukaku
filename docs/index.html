@@ -106,7 +106,7 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     cursor: pointer;
   }
-  #download-json {
+  #print-in-browser, #download-json {
     padding: 4px 10px;
     font-size: 11px;
     border: 1px solid #ccc;
@@ -132,11 +132,55 @@
     border: 1px solid rgba(0, 0, 0, 0.6);
     box-sizing: border-box;
   }
+
+  #print-root { display: none; }
+
+  /* ADR 0007: client-side print mode. Named @page rules per orientation let
+     one print job mix portrait and landscape pages — verified working via
+     Playwright's page.pdf({preferCSSPageSize:true}) before building this
+     (that flag makes Playwright honor these same @page rules instead of a
+     fixed size, so it's a faithful stand-in for a real "Save as PDF"). */
+  @page print-portrait { size: 210mm 297mm; margin: 8mm; }
+  @page print-landscape { size: 297mm 210mm; margin: 8mm; }
+
+  @media print {
+    body > *:not(#print-root) { display: none !important; }
+    #print-root { display: block; }
+    .print-page {
+      position: relative;
+      box-sizing: border-box;
+      border: 0.75pt solid #000; /* neatline, matches scripts/render/page.html */
+      break-after: page;
+      overflow: hidden;
+    }
+    .print-page.portrait { page: print-portrait; width: 194mm; height: 281mm; }
+    .print-page.landscape { page: print-landscape; width: 281mm; height: 194mm; }
+    .print-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+    .print-page .print-controls {
+      position: absolute; inset: 0; pointer-events: none;
+    }
+    /* MapLibre's own control DOM (ScaleControl/NavigationControl), cloned in
+       as static markup per page — see preparePrintPages(). Re-anchor it to
+       the page corners since its normal positioning depends on a live map
+       container that no longer exists once printed. */
+    .print-page .maplibregl-ctrl-bottom-left { position: absolute; left: 10mm; bottom: 10mm; }
+    .print-page .maplibregl-ctrl-bottom-right { position: absolute; right: 10mm; bottom: 10mm; }
+    .print-page .print-brand {
+      position: absolute; top: 10mm; left: 10mm; z-index: 1;
+      font: bold 6mm/1 sans-serif; color: #222;
+    }
+    .print-page .print-ref {
+      position: absolute; top: 10mm; right: 10mm; z-index: 1;
+      background: rgba(255, 255, 255, 0.85); padding: 3mm 5mm; border-radius: 1mm;
+      font: bold 8mm/1 sans-serif;
+    }
+  }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <div id="grid-overlay"></div>
+<div id="print-root"></div>
 
 <div id="style-panel" class="panel">
   <h2>Style</h2>
@@ -186,11 +230,16 @@
 <div id="make-atlas-panel">
   <div id="page-estimate"></div>
   <button id="make-atlas">Make Atlas</button>
+  <button id="print-in-browser">Print in Browser</button>
   <button id="download-json">Download JSON only</button>
 </div>
 
 <script type="module">
-import { Map as MapLibreMap } from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
+import {
+  Map as MapLibreMap,
+  ScaleControl,
+  NavigationControl,
+} from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
 
 const STARS = "https://stars.optgeo.org/style";
 
@@ -202,6 +251,12 @@ const CITIES = {
 
 // A4 aspect ratio (width/height), matching scripts/render/lib.js's viewportFor().
 const A4_ASPECT = { portrait: 210 / 297, landscape: 297 / 210 };
+
+// A4 at 96 CSS px/inch — matches scripts/render/lib.js's viewportFor(), used
+// here to size the offscreen staging map for "Print in Browser" (ADR 0007).
+function viewportPxFor(orientation) {
+  return orientation === "landscape" ? { width: 1123, height: 794 } : { width: 794, height: 1123 };
+}
 
 const state = {
   style: "positron",
@@ -420,6 +475,171 @@ makeAtlasButton.addEventListener("click", () => {
   const pages = computePages();
   const url = githubCreateFileUrl(requestFilename(), JSON.stringify(pages));
   window.open(url, "_blank", "noopener");
+});
+
+// --- Print in Browser (ADR 0007) ---
+// A second way to turn a `computePages()` array into a PDF, alongside the
+// GitHub Actions path (ADR 0006): render every page into a hidden print-only
+// document and call window.print(), letting the browser's own "Save as PDF"
+// do the rest. No Playwright, no GitHub, nothing leaves this tab. The
+// trade-off is the user has to be present to complete the print step, and
+// output quality depends on their own browser/OS — see ADR 0007.
+//
+// Named per-orientation @page rules (print-portrait/print-landscape, defined
+// above) let one print job mix portrait and landscape pages; verified this
+// actually works in Chromium via a throwaway Playwright spike
+// (page.pdf({preferCSSPageSize:true}) honors the same @page rules a real
+// "Save as PDF" would) before writing this.
+async function preparePrintPages(pages) {
+  const printRoot = document.getElementById("print-root");
+  printRoot.innerHTML = "";
+
+  for (const spec of pages) {
+    const orientation = spec.orientation === "landscape" ? "landscape" : "portrait";
+    const pxSize = viewportPxFor(orientation);
+
+    // Offscreen staging container: MapLibre needs a real laid-out element to
+    // size its canvas against, so this can't be display:none. Moved far off
+    // screen instead, and removed as soon as this page's snapshot is taken.
+    const stage = document.createElement("div");
+    stage.style.cssText = `position:fixed; left:-9999px; top:0; width:${pxSize.width}px; height:${pxSize.height}px;`;
+    document.body.appendChild(stage);
+
+    const pageMap = new MapLibreMap({
+      container: stage,
+      style: `${STARS}/${spec.style}`,
+      bounds: [
+        [spec.bbox[0], spec.bbox[1]],
+        [spec.bbox[2], spec.bbox[3]],
+      ],
+      fitBoundsOptions: { padding: spec.padding || 0, animate: false },
+      projection: "mercator", // ADR 0004: no 3D, same as scripts/render/page.html
+      interactive: false,
+      attributionControl: false,
+      fadeDuration: 0,
+    });
+    pageMap.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
+    pageMap.addControl(new NavigationControl({ showZoom: false, showCompass: true }), "bottom-right");
+
+    await new Promise((resolve, reject) => {
+      pageMap.on("error", (e) => reject(e.error || e));
+      pageMap.on("load", () => {
+        pageMap.setTerrain(null);
+        if (spec.grid) addOverviewGridLayers(pageMap, spec.grid);
+      });
+      pageMap.once("idle", resolve);
+    });
+
+    // Same WebGL-canvas-doesn't-survive-print workaround as
+    // scripts/render/page.html (ADR 0002) — applies here too, since this is
+    // the same underlying Chromium print pipeline, just invoked via
+    // window.print() instead of Playwright's page.pdf().
+    const dataUrl = pageMap.getCanvas().toDataURL("image/png");
+    // MapLibre's own control markup (scale bar text, compass icon) — not
+    // user-supplied, safe to carry over as-is. Re-anchored to page corners
+    // by the @media print CSS above, since the live container it depended
+    // on for positioning is gone once this map is removed.
+    const controlsHTML = pageMap.getContainer().querySelector(
+      ".maplibregl-control-container"
+    ).innerHTML;
+
+    pageMap.remove(); // free the WebGL context before starting the next page
+    stage.remove();
+
+    const section = document.createElement("section");
+    section.className = `print-page ${orientation}`;
+
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    section.appendChild(img);
+
+    const controls = document.createElement("div");
+    controls.className = "print-controls";
+    controls.innerHTML = controlsHTML;
+    section.appendChild(controls);
+
+    const brand = document.createElement("div");
+    brand.className = "print-brand";
+    brand.textContent = spec.title ? `Zukaku: ${spec.title}` : "Zukaku";
+    section.appendChild(brand);
+
+    if (spec.ref) {
+      const ref = document.createElement("div");
+      ref.className = "print-ref";
+      ref.textContent = spec.ref;
+      section.appendChild(ref);
+    }
+
+    printRoot.appendChild(section);
+  }
+}
+
+// Same overview-page grid overlay as scripts/render/page.html: draw each
+// detail page's cell as a rectangle + grid-reference label.
+function addOverviewGridLayers(pageMap, cells) {
+  const polygons = {
+    type: "FeatureCollection",
+    features: cells.map((c) => ({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [c.bbox[0], c.bbox[3]],
+            [c.bbox[2], c.bbox[3]],
+            [c.bbox[2], c.bbox[1]],
+            [c.bbox[0], c.bbox[1]],
+            [c.bbox[0], c.bbox[3]],
+          ],
+        ],
+      },
+    })),
+  };
+  const points = {
+    type: "FeatureCollection",
+    features: cells.map((c) => ({
+      type: "Feature",
+      properties: { label: c.label },
+      geometry: {
+        type: "Point",
+        coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
+      },
+    })),
+  };
+  pageMap.addSource("zukaku-grid-lines", { type: "geojson", data: polygons });
+  pageMap.addLayer({
+    id: "zukaku-grid-lines",
+    type: "line",
+    source: "zukaku-grid-lines",
+    paint: { "line-color": "#000", "line-width": 1.5 },
+  });
+  pageMap.addSource("zukaku-grid-labels", { type: "geojson", data: points });
+  pageMap.addLayer({
+    id: "zukaku-grid-labels",
+    type: "symbol",
+    source: "zukaku-grid-labels",
+    layout: { "text-field": ["get", "label"], "text-size": 28, "text-font": ["Noto Sans Bold"] },
+    paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 2 },
+  });
+}
+
+const printButton = document.getElementById("print-in-browser");
+printButton.addEventListener("click", async () => {
+  const pages = computePages();
+  const original = printButton.textContent;
+  printButton.textContent = `Rendering (${pages.length} pages)…`;
+  printButton.disabled = true;
+  try {
+    await preparePrintPages(pages);
+    window.print();
+  } catch (err) {
+    console.error(err);
+    alert(`Print preparation failed: ${err.message || err}`);
+  } finally {
+    printButton.textContent = original;
+    printButton.disabled = false;
+  }
 });
 
 const downloadJsonButton = document.getElementById("download-json");

@@ -69,3 +69,15 @@ PDFは`docs/responses/*.pdf`に置く(`docs/`配下なのでGitHub Pagesから�
 (git diffに依存しない、蓄積しても性能劣化しない)。実際の`dwg7/zukaku`リポジトリで
 push・PR両トリガーの動作、GitHub Pagesの配信まで実機確認済み。
 → [adr/0006](adr/0006-github-actions-render-pipeline.md)
+
+## D7: ブラウザ内印刷モードを第三の選択肢として追加(Playwright/Actions不要)
+
+Playwrightの`page.pdf()`はChromiumのネイティブ印刷パイプラインを外部から叩いているだけで、
+CSSの`@page`は通常の`window.print()`でも同じ制御ができる、というユーザーの指摘を受けて
+検討・実装した。CSSのnamed pages(`page-orientation`)による1印刷ジョブ内での向き混在は
+MDN上"Limited availability"だったため、実装前にPlaywrightの`page.pdf({preferCSSPageSize:
+true})`でスパイクテストし、実際に動くことを確認してから本実装に進んだ。既存の「Make
+Atlas」「Download JSON only」に加える第三の選択肢として`docs/index.html`に実装
+(新しいリポジトリは作らない、既存の範囲指定UI資産をそのまま流用)。GitHub Actionsの
+統制された実行環境・自動化を諦める代わりに、standing serverもGitHubアカウントも不要になる。
+→ [adr/0007](adr/0007-client-side-print-mode.md)

@@ -164,9 +164,14 @@ dwg7組織の他プロジェクト(kaga0など)にならい、以下の4ファ�
   スケールバー+方位記号)。**UI→JSON→`atlas.js`のend-to-endを実機検証済み**
   (帯広グリッドで隣接タイリングされた正しいPDFを生成できることを確認)。
 - **GitHub Actionsでのレンダリング**を[ADR 0006](adr/0006-github-actions-render-pipeline.md)
-  として採用・実装済み。`requests/*.json`のpush/PRをトリガーに`.github/workflows/atlas.yml`が
-  `atlas.js`を実行しPDFをartifact化する。「Make Atlas」はGitHubの新規ファイルURLを
-  開いてPR起票を促す(認証情報は埋め込まない)。Playwright+MapLibre GL JS+PDF保存が
-  Actions相当のコンテナで動くことはローカルで実機確認済みだが、**実際のGitHub上での
-  動作(commit/push後)はまだ未検証**。
-- README.mdの拡充、GitHub Pagesの実際の有効化はこれから。
+  として採用・実装済み。`docs/requests/*.json`のpush/PRをトリガーに
+  `.github/workflows/atlas.yml`が`atlas.js`を実行し、`docs/responses/*.pdf`にcommitして
+  GitHub Pagesから直接開けるようにする。「Make Atlas」はGitHubの新規ファイルURLを
+  開いてPR起票を促す(認証情報は埋め込まない)。**実際にdwg7/zukakuでpush・PR・
+  マージまで実機検証済み**(コンテナジョブ特有の不具合を3件発見・修正)。
+- **「Print in Browser」(ブラウザ内印刷モード)**を[ADR 0007](adr/0007-client-side-print-mode.md)
+  として追加。Playwright/GitHub Actionsを一切使わず、`window.print()`+CSS named pages
+  (`@page`のportrait/landscape混在)だけでPDF化する。standing serverもGitHub
+  アカウントも不要な第三の選択肢として、既存パスと並存させる。
+- GitHub Pagesは公開中: https://dwg7.github.io/zukaku/。unopengis/7への案内issueも
+  投稿済み([UNopenGIS/7#989](https://github.com/UNopenGIS/7/issues/989))。

@@ -31,10 +31,15 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   左下=「Make Atlas」(GitHubの新規ファイルURLを開いてPR起票を促す)・
   「Download JSON only」(ローカル/Docker向け)。
 - 概要ページ(A1/A2/B1/B2形式のグリッド参照)、8mm印刷マージン+図郭線+スケールバー+
-  方位記号+「Zukaku」ワードマークまで実装済み。
+  方位記号+「Zukaku」ワードマークまで実装済み。都市名は印刷面から削除済み(パン後に
+  ズレるため、ADR 0005)。
 - `bvmap-dark`は日本国内専用(ビエンチャンで空白になることを実機確認、CLAUDE.md 3節)。
-- **未確認**: 実ブラウザでの目視確認(Playwrightでは確認済みだが、実際のChrome等では
-  未確認)。**ユーザー自身が確認する予定**。
+- **実ブラウザでの目視確認はユーザー自身が実施済み**(ビエンチャン・positron・2×2で
+  実際にMake Atlasから本物のPRを起票し、Actionsが正しくレンダリングした)。
+- **「Print in Browser」(ブラウザ内印刷モード)を追加**([ADR 0007](adr/0007-client-side-print-mode.md))。
+  Playwright/GitHub Actionsを一切使わず、`window.print()`+CSS named pages
+  (`@page`のportrait/landscape混在)だけでPDF化する第三の選択肢。同じ
+  `computePages()`を再利用し、印刷面の装飾もPlaywright版と同等。実機検証済み。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -53,24 +58,15 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
 
 ## 次にやること
 
-MVPとして把握していた3件は完了した:
+MVPとして把握していたタスク・実ブラウザ確認・unopengis/7への案内issue
+([UNopenGIS/7#989](https://github.com/UNopenGIS/7/issues/989)、#986への回答として投稿済み)は
+すべて完了。残っているのは優先度の低いものだけ:
 
-1. ~~UXの磨き込み~~ → 完了。「Make Atlas」前にページ数・推定生成時間を表示する
-   ようにした([docs/index.html](docs/index.html))。
-2. ~~残りの実機検証~~ → 完了。外部ホスト(GSI/OpenMapTiles GitHub Pages、
-   tile.openstreetmap.jp)の可用性・応答速度を実測し、cache-busting機構は不要と
-   結論づけた([ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の
-   「検証結果その4」参照)。
-3. ~~保留した機能の記録~~ → 完了([ADR 0005](adr/0005-range-selection-ui-interaction-model.md)参照)。
-
-残っているのは:
-
-- **実ブラウザでの最終確認**: ユーザー自身が実施予定。
-- (将来)https://github.com/unopengis/7/issues にzukakuの案内issueを書く
-  (ユーザー発言、2026-08-30、「動作確認が一通り終わったら」とのこと — 現時点で
-  該当する可能性が高いので、次回セッションで確認する)。
-- 上記以外の細かい改善は[ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の
-  残タスク(フロントエンド一本化、PDFファイルサイズ最適化)参照、いずれも優先度低。
+- [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の残タスク(フロントエンド
+  一本化、PDFファイルサイズ最適化)。
+- [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
+  実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
+  Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
 
 ## 読むべき順序
 
@@ -84,7 +80,8 @@ MVPとして把握していた3件は完了した:
 
 - `scripts/render/` — ヘッドレスPDF生成(Node.js、Playwright、pdf-lib)。
   `npm install` 後、`node scripts/render/atlas.js --pages <config.json> --out atlas.pdf`。
-- `docs/` — GitHub Pagesが配信するもの全て: `index.html`(範囲指定UI)、
+- `docs/` — GitHub Pagesが配信するもの全て: `index.html`(範囲指定UI、GitHub Actions
+  経由の「Make Atlas」とブラウザ内完結の「Print in Browser」の両方を持つ)、
   `requests/`(リクエストJSON)、`responses/`(生成PDF)。
 - `Dockerfile` — `docker build -t zukaku . && docker run --rm -v "$PWD/out:/out" zukaku --pages scripts/render/sample-atlas.json --out /out/atlas.pdf`。
 - `.github/workflows/atlas.yml` — `docs/requests/*.json`のpush/PRで自動レンダリング。
