@@ -2,10 +2,10 @@
 
 zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)向け。
 
-## 現状(2026-08-30時点)
+## 現状(2026-08-30時点) — MVPは実際にデプロイ・動作確認済み
 
-調査・設計判断に加えて、レンダリングパイプラインと範囲指定UIのプロトタイプまで
-一通り動く状態。ADR 0001〜0005 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
+調査・設計から実装、そして**実際のGitHub上へのデプロイ・動作確認まで完了**。
+ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
 
 - スコープ・技術方針は [CLAUDE.md](CLAUDE.md) 参照。zukaku自身はMartin等のタイル
   サーバーを持たず、stars.optgeo.orgのデータをHeadless Chromium(Playwright)+
@@ -16,71 +16,57 @@ zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)�
 
 ### レンダリングパイプライン([scripts/render/](scripts/render/)、[Dockerfile](Dockerfile))
 
-- 単ページ([render.js](scripts/render/render.js))・複数ページ結合
-  ([atlas.js](scripts/render/atlas.js)、pdf-libでマージ)・bbox→camera変換
-  (MapLibre GL JSの`bounds`/`fitBoundsOptions`に委譲)・Docker実行、いずれも
-  実機検証済み。詳細は[ADR 0002の「検証結果」各節](adr/0002-headless-chromium-maplibre-gl-js.md)参照。
+- 単ページ・複数ページ結合(pdf-lib)・bbox→camera変換(MapLibre GL JSの
+  `bounds`/`fitBoundsOptions`)・Docker実行、いずれも実機検証済み。詳細は
+  [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)参照。
 - **重要な落とし穴**: Playwrightの`page.pdf()`は生きたWebGLキャンバスを含められない。
-  `canvas.toDataURL()`で画像化し`<img>`に差し替えてから`page.pdf()`する必要がある
-  ([page.html](scripts/render/page.html)に実装済み)。
-- maplibre-gl v6はESM専用(UMDバンドル廃止)。`<script type="module">`+
-  `import { Map } from ".../maplibre-gl.mjs"`で読み込む(v4→v6移行時にハマった点、
-  ADR 0002に記録)。
+  `canvas.toDataURL()`で画像化し`<img>`に差し替える必要がある([page.html](scripts/render/page.html))。
+- maplibre-gl v6はESM専用。`<script type="module">`+`import { Map } from ".../maplibre-gl.mjs"`。
 
-### 範囲指定UIプロトタイプ([docs/index.html](docs/index.html))
+### 範囲指定UI([docs/index.html](docs/index.html)) — 公開中: https://dwg7.github.io/zukaku/
 
-- Field Papers本家の`leaflet-page-composer.js`を調査し、インタラクションモデル
-  (画面中央固定グリッド+地図パンで位置合わせ)を[ADR 0005](adr/0005-range-selection-ui-interaction-model.md)
-  として記録・プロトタイプ実装済み。
-- レイアウト: 左上=スタイル選択、右上=都市プリセット(帯広/札幌/ビエンチャン)、
-  上部中央=行(m)・列(n)+/-とportrait/landscape切替、左下=`Make Atlas`ボタン
-  (**意図的に未配線**、押しても何も起きない)。
-- Playwrightで動作確認済み(スクリーンショット目視)。**このリポジトリ作業で使っている
-  埋め込みBrowserプレビューツールではWebGL/Workerが動かず地図が読み込まれない
-  現象があるが、これはプレビュー環境固有の制約であり、コードの不具合ではないと
-  判断した**(Playwright=実際のヘッドレスChromiumでは正常動作)。実ブラウザでの
-  最終確認はまだ。
-- `bvmap-dark`は国土地理院データのため日本国内専用、ビエンチャンでは空白になることを
-  実機確認(CLAUDE.md 3節に反映済み)。
-- **「Make Atlas」ボタンを配線し、UI→レンダリングパイプラインのend-to-endを実機検証
-  済み**。グリッド各セルの地理座標は`map.unproject()`で算出、`atlas-pages.json`として
-  ダウンロードさせる形にした(UI自体はヘッドレスレンダラーを実行しない、静的ページの
-  ままでよい設計)。
-- **概要ページ(1ページ目)+A1/A2/B1/B2形式のグリッド参照を実装**。ユーザーが共有した
-  Field Papers本家の実サンプル(`fieldpapers.org/atlases/4ibxrgcu`)に合わせて、連番
-  ラベルから「行=アルファベット・列=数字」の参照方式に変更し、各詳細ページ右上に
-  その参照を大きく表示するようにした。グリッド線・ラベルの色も本家に合わせて黒に。
-  QRコード・位置合わせドット(本家のスキャンバック用マーカー)は非実装(スコープ外)。
-  帯広2×2グリッドでend-to-end動作確認済み。詳細は
-  [ADR 0005](adr/0005-range-selection-ui-interaction-model.md)参照。
-- **印刷仕上げの調整**: 各ページに8mm印刷マージン+図郭線(細い黒枠)、左下に
-  MapLibre標準`ScaleControl`によるスケールバー、右下に`NavigationControl`
-  (コンパスボタン流用)による方位記号、左上に「Zukaku」ワードマーク(スタイル名の
-  ラベルは削除。範囲指定UI側のスタイル選択ボタンはそのまま)。目視確認済み。
-- **GitHub Actionsでのレンダリング + GitHub「新規ファイル」URLでのPR起票**を実装
-  ([ADR 0006](adr/0006-github-actions-render-pipeline.md))。`docs/index.html`の
-  「Make Atlas」はGitHubの`/new/{branch}?filename=&value=`URLを開いてPR起票を
-  促す形に変更(認証情報は一切埋め込まない)。ローカル/Docker向けに「Download
-  JSON only」ボタンも維持。`.github/workflows/atlas.yml`を新設し、
-  `requests/*.json`のpush/PRをトリガーに`atlas.js`を実行してPDFをartifact化する。
-  **Playwright+MapLibre GL JS+starsタイル+PDF保存が、Actions相当のコンテナ
-  (`mcr.microsoft.com/playwright:v1.62.1-jammy`)で動くことはローカルで実機確認済み**
-  (5ページの有効なPDFを生成)。ただしこのセッションでは一度もcommit/pushしておらず、
-  **実際のGitHub上での動作(PR起票→Actions実行)は未検証**。
+- Field Papers本家(`leaflet-page-composer.js`)を調査したインタラクションモデル
+  (画面中央固定グリッド+地図パン)を実装([ADR 0005](adr/0005-range-selection-ui-interaction-model.md))。
+- レイアウト: 左上=スタイル選択、右上=都市プリセット、上部中央=行列+/-と向き切替、
+  左下=「Make Atlas」(GitHubの新規ファイルURLを開いてPR起票を促す)・
+  「Download JSON only」(ローカル/Docker向け)。
+- 概要ページ(A1/A2/B1/B2形式のグリッド参照)、8mm印刷マージン+図郭線+スケールバー+
+  方位記号+「Zukaku」ワードマークまで実装済み。
+- `bvmap-dark`は日本国内専用(ビエンチャンで空白になることを実機確認、CLAUDE.md 3節)。
+- **未確認**: 実ブラウザでの目視確認(Playwrightでは確認済みだが、実際のChrome等では
+  未確認)。**ユーザー自身が確認する予定**。
 
-## 次にやること(優先度順)
+### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
-1. **commit・push、GitHub Pages/Actionsの実地確認**(ユーザーの許可が必要、
-   [ADR 0006](adr/0006-github-actions-render-pipeline.md)参照): リポジトリ設定で
-   GitHub Pages(Settings → Pages → `/docs`)を有効化。「Make Atlas」→GitHubの
-   新規ファイル画面→PR作成→`.github/workflows/atlas.yml`起動→artifactのPDF、
-   という一連の流れを実際のGitHub上で確認する。ローカルでのコンテナ内検証は
-   済んでいるが、GitHub上での動作(特に`tj-actions/changed-files`)は未確認。
-2. `docs/index.html`を実ブラウザ(GitHub Pages公開後、または手元のChrome)で
-   最終確認する(Playwrightでは検証済みだが、実ブラウザでの目視はまだ)。
-3. README.mdの拡充。
-4. UXの磨き込み(優先度中): ページ数・推定生成時間のプレビュー表示など。
-5. 残りの実機検証(優先度低): GSI GitHub Pages等の外部ホスト依存・cache-busting の要否。
+[ADR 0006](adr/0006-github-actions-render-pipeline.md)参照。`docs/requests/*.json`
+(リクエスト)と`docs/responses/*.pdf`(生成結果、GitHub Pagesから直接開ける)を
+ペアで管理。実際に`dwg7/zukaku`でpush・PR・マージまで実機検証し、以下の不具合を
+発見・修正済み:
+
+- `tj-actions/changed-files`がcontainerジョブ+pushイベントで失敗 → 「既に
+  responseがあるリクエストはスキップ」方式に置き換え(冪等・蓄積耐性あり)。
+- containerジョブのデフォルトシェルが`sh`(`shopt`が無い) → `shell: bash`明示。
+- containerジョブの`safe.directory`問題 → `git config --global --add safe.directory`。
+- `.gitignore`の`*.pdf`が`docs/responses/`もブロック → 例外パターンを追加。
+- 同時実行のrace(2つのリクエストが近接してmainにpushされると`git push`が競合)
+  → `concurrency`グループで直列化 + push直前に`git pull --rebase`。
+
+## 次にやること
+
+実ブラウザでの最終確認は**ユーザー自身が実施**。残りは以下の3件(優先度順):
+
+1. **UXの磨き込み**: 「Make Atlas」を押す前に、ページ数(m×n+概要ページ)や
+   おおよその生成時間の見込みを画面に表示する。現状はクリックするまで何ページに
+   なるか数字でしか分からない(m/n表示はあるが「合計n+1ページ」等の明示は無い)。
+2. **残りの実機検証**: GSI GitHub Pages等(`vbm`/`vlcm`系スタイルのglyphs/sprite)
+   への外部ホスト依存が、実際のバッチ生成の安定性にどの程度影響するか。
+   cache-busting用クエリの要否も未検証(ADR 0002の「検証が必要な事項」に記載)。
+   現行スタイル(`bvmap-dark`/`positron`)では未確認、今後スタイルを追加する際に
+   関わってくる可能性がある。
+3. **保留した機能の記録**: ユーザーの判断で今回は見送った機能を記録しておく
+   (「今はやめとく」であって「やらない」ではないため) — アトラスのタイトル/メモ
+   入力機能、Actionsからリクエスト元へのメンション通知(ダウンロードを促す)。
+   将来必要になったら、まずADRを起こしてから着手すること。
 
 ## 読むべき順序
 
@@ -93,9 +79,8 @@ zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)�
 ## 実装詳細
 
 - `scripts/render/` — ヘッドレスPDF生成(Node.js、Playwright、pdf-lib)。
-  `npm install` 後、`node scripts/render/render.js --help`相当は無いが
-  ソース内のUsageコメント参照。`node scripts/render/atlas.js --pages <config.json> --out atlas.pdf`。
-- `docs/` — GitHub Pages予定の範囲指定UI(静的HTML、ビルド不要、MapLibre GL JSは
-  unpkg CDN経由)。ローカル確認は `python3 -m http.server` 等で`docs/index.html`を
-  配信すればよい。
+  `npm install` 後、`node scripts/render/atlas.js --pages <config.json> --out atlas.pdf`。
+- `docs/` — GitHub Pagesが配信するもの全て: `index.html`(範囲指定UI)、
+  `requests/`(リクエストJSON)、`responses/`(生成PDF)。
 - `Dockerfile` — `docker build -t zukaku . && docker run --rm -v "$PWD/out:/out" zukaku --pages scripts/render/sample-atlas.json --out /out/atlas.pdf`。
+- `.github/workflows/atlas.yml` — `docs/requests/*.json`のpush/PRで自動レンダリング。
