@@ -46,7 +46,7 @@
 <body>
 <div id="map"></div>
 <div id="label"></div>
-<div id="brand">Zukaku</div>
+<div id="brand"></div>
 <script type="module">
   // maplibre-gl v6 ships ESM-only (dist/maplibre-gl.mjs); there is no more
   // UMD bundle that attaches a global `maplibregl`.
@@ -60,6 +60,12 @@
   const label = params.get("label"); // city name, shown top-right (small)
   const ref = params.get("ref"); // grid reference (A1, B2, ...) or "概要", shown top-right (large)
   const gridParam = params.get("grid"); // JSON: [{bbox:[w,s,e,n], label}, ...] — overview page only
+  const title = params.get("title"); // optional map title, baked in as plain text (never an <input>)
+
+  // Plain text, top-left, replacing the bare "Zukaku" wordmark when a title
+  // is set. This is a styled <div>, not an <input> — the title text box in
+  // the picker UI (docs/index.html) never itself gets rendered into the PDF.
+  document.getElementById("brand").textContent = title ? `Zukaku: ${title}` : "Zukaku";
 
   const labelEl = document.getElementById("label");
   if (ref) {
@@ -101,7 +107,11 @@
       [west, south],
       [east, north],
     ];
-    mapOptions.fitBoundsOptions = { padding: 0, animate: false };
+    // Overview pages pass a non-zero `padding` (docs/index.html) so the grid
+    // block doesn't touch the print frame — detail pages default to 0 to
+    // fill the page edge-to-edge, maximizing usable map area.
+    const padding = Number(params.get("padding") || "0");
+    mapOptions.fitBoundsOptions = { padding, animate: false };
   } else {
     mapOptions.center = [
       parseFloat(params.get("lon") || "139.767"),

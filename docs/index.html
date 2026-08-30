@@ -60,6 +60,23 @@
   }
   #grid-panel .value { min-width: 1.5em; text-align: center; font-variant-numeric: tabular-nums; }
 
+  /* top-center, below grid-panel: map title (baked into the PDF's top-left
+     brand label, "Zukaku: <title>" — this input box itself never appears in
+     the PDF, see scripts/render/page.html). */
+  #title-panel {
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 8px;
+  }
+  #title-input {
+    width: 220px;
+    padding: 6px 10px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+
   /* bottom-left: Make Atlas */
   #make-atlas-panel {
     position: absolute;
@@ -154,6 +171,13 @@
   </div>
 </div>
 
+<!-- Field Papers has a "map title" field in its compose UI; zukaku's
+     equivalent. Optional — baked into the PDF as plain text (top-left brand
+     label, "Zukaku: <title>"), never as this input box itself. -->
+<div id="title-panel" class="panel">
+  <input id="title-input" type="text" placeholder="地図のタイトル" maxlength="60">
+</div>
+
 <!-- ADR 0005: this UI never runs the headless renderer itself (that's a
      separate GitHub Actions / local batch step, ADR 0002/0003/0006). "Make
      Atlas" opens GitHub's own pre-filled "create file" page (the user's own
@@ -185,7 +209,12 @@ const state = {
   rows: 1,
   cols: 1,
   orientation: "portrait",
+  title: "",
 };
+
+document.getElementById("title-input").addEventListener("input", (e) => {
+  state.title = e.target.value.trim();
+});
 
 const map = new MapLibreMap({
   container: "map",
@@ -330,6 +359,7 @@ function computePages() {
         orientation: state.orientation,
         label: cityLabel,
         ref: gridRef, // shown prominently, top-right (ADR 0005)
+        title: state.title || undefined,
       });
     }
   }
@@ -348,7 +378,12 @@ function computePages() {
     orientation: overviewOrientation,
     label: cityLabel,
     ref: "概要",
+    title: state.title || undefined,
     grid: detailPages.map((p) => ({ bbox: p.bbox, label: p.ref })),
+    // Breathing room around the grid block so it doesn't touch the print
+    // frame (user feedback, 2026-08-30: portrait overview looked cramped).
+    // Detail pages keep padding 0 to fill the page edge-to-edge.
+    padding: 50,
   };
 
   return [overviewPage, ...detailPages];

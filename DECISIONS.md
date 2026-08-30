@@ -52,6 +52,10 @@ UXだと判明した(「Pin grid to map」で地理座標固定に切り替え�
 ないため)。[docs/index.html](docs/index.html)に実装済み(スタイル/都市選択、m×n・向き
 切替、「Make Atlas」で各セルのbboxを`map.unproject()`で算出し`atlas-pages.json`として
 ダウンロード → `atlas.js`にそのまま渡せる)。UI→レンダリングのend-to-endを実機確認済み。
+Field Papers本家にならったタイトル入力機能(`docs/index.html`の`#title-input`)も
+実装し、PDF左上のブランドラベルに「Zukaku: {title}」として焼き込む(入力欄自体は
+別ページのため焼き込まれない)。概要ページはグリッド周りに余白(`padding: 50`)を
+追加し、詳細ページはページいっぱいのまま。
 → [adr/0005](adr/0005-range-selection-ui-interaction-model.md)
 
 ## D6: レンダリングはGitHub Actions、起票はGitHubの「新規ファイル」URLトリック

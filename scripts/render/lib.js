@@ -91,6 +91,8 @@ export async function renderPage(browser, port, spec) {
   if (spec.label) qs.set("label", spec.label);
   if (spec.ref) qs.set("ref", spec.ref);
   if (spec.grid) qs.set("grid", JSON.stringify(spec.grid));
+  if (spec.title) qs.set("title", spec.title);
+  if (spec.padding) qs.set("padding", String(spec.padding));
 
   const url = `http://127.0.0.1:${port}/scripts/render/page.html?${qs}`;
 
