@@ -1,0 +1,202 @@
+# ADR 0005: 範囲指定UIのインタラクションモデル(Field Papers由来)
+
+- ステータス: 採用・プロトタイプ実装済み([docs/index.html](../docs/index.html))
+- 日付: 2026-08-30
+
+## コンテキスト
+
+zukakuはField Papers由来の「地図上でアトラスの範囲を指定するUI」を移植する方針
+(CLAUDE.md 3節)。実装に入る前に、Field Papers本家(現行の
+[fieldpapers/fp-web](https://github.com/fieldpapers/fp-web))が実際にどういう
+インタラクションでアトラスの範囲・ページ割りを決めているかを調査した。
+
+肝になるのは `app/assets/javascripts/leaflet/leaflet-page-composer.js` という
+Leafletプラグインで、通常のパン/ズーム可能な地図の上に「ページグリッド」を
+オーバーレイ表示する仕組みになっている。
+
+## 調査結果: Field Papersの実際の挙動
+
+- **デフォルト(ロック解除、`locked: false`)**: ページグリッドは常に**画面中央に
+  固定**される。ユーザーが地図をパン/ズームしても、グリッド(ページ枠)は画面上の
+  位置を変えず、地図の方が下で動く。`_onMapMovement`イベントのたびに
+  `_getBoundsPinToCenter()`でグリッドの地理座標範囲を再計算し、常に画面中央に
+  再配置している。
+- **「Pin grid to map」チェック時(ロック、`locked: true`)**: グリッドの北西角が
+  **地理座標に固定**される(`_getBoundsPinToNorthWest()`)。この場合はグリッドが
+  地図上の特定位置に「釘付け」され、パン/ズームで画面上の相対位置が変わる
+  (地図に対してグリッドが動かないモード)。
+- **各ページのbbox算出**: グリッドの各セルの四隅(画面座標=ピクセル)を
+  `map.containerPointToLatLng()`で地理座標に逆変換して求める。つまりbboxは
+  「その瞬間の地図のcenter/zoom/bearingに対する、固定サイズの画面矩形の逆投影」
+  として計算される。zukaku側で自前にbbox→camera変換を実装している
+  ([ADR 0002](0002-headless-chromium-maplibre-gl-js.md)参照)のとは向きが逆
+  (camera→bboxの向き)だが、同じ`fitBounds`系のAPIで対応可能。
+- **行/列の増減**: `+`/`-`ボタンで`this.refs.rows++`のように行数・列数を直接
+  増減し、`_updatePages()`でグリッド全体の寸法・各セルを再計算・再描画する。
+- **用紙サイズ・向き**: `paper_aspect_ratios`というテーブル(例:
+  `a4: {landscape: 1.414, portrait: 0.707}`)でセルのアスペクト比を決め、
+  向き変更時は幅と高さを入れ替える。
+
+## 決定
+
+**zukakuの範囲指定UIも、Field Papersと同じ「画面中央固定グリッド + 地図をパンして
+位置合わせ」というインタラクションモデルを採用する方針とする。** ただし以下の点は
+zukaku向けに単純化・変更する:
+
+- 「Pin grid to map」相当のロック機能は、当面実装しない(必要になったら追加検討)。
+  常に画面中央固定モードのみで良い。
+- 用紙サイズはA4のみ(CLAUDE.md 3節)。アスペクト比テーブルはA4の
+  portrait/landscape 2値のみで足りる。
+- ページ間の重なりについて: ユーザーから「アトラスは貼り合わせる用途ではないため、
+  多少の重なりがあってもよい」との指摘があった。Field Papers本家はセル同士が
+  重ならず隙間なく敷き詰められる設計に見えるが、zukakuでは将来的にセル間に
+  意図的なマージン(重なり)を持たせるオプションを検討してもよい(未実装、
+  優先度低)。継ぎ目の厳密な一致を要求しないという点は[ADR 0004](0004-terrain-and-fill-extrusion-policy.md)
+  の「貼り合わせ前提ではない」という理解とも整合する。
+- 行×列のグリッド(m×n)による均等割りページと、[ADR 0002](0002-headless-chromium-maplibre-gl-js.md)の
+  `sample-atlas.json`のような「ページごとに個別のbbox/スタイルを指定する」方式は
+  併存できる。UIから生成されるのは前者(グリッド由来のbbox配列)だが、
+  ヘッドレスレンダリング側(`atlas.js`)の入力形式は既に「ページ配列」という
+  汎用的な形なので、UI側の実装がどちらに転んでも受け皿は変わらない。
+
+## 実装状況(2026-08-30)
+
+[docs/index.html](../docs/index.html)にプロトタイプを実装した(MapLibre GL JS v6を
+unpkg CDN経由で読み込む、素の静的HTML、ビルド不要)。
+
+- 左上: スタイル選択(`bvmap-dark`/`positron`)、右上: 都市プリセット選択(帯広/札幌/
+  ビエンチャン)、上部中央: 行(m)・列(n)の+/-ボタンとportrait/landscape切り替え、
+  左下: `Make Atlas`ボタン(**意図的に未配線**、クリックしても何も起きない)。
+- グリッドオーバーレイは画面中央に`position:fixed`で固定表示。地理座標への変換
+  ロジックは一切持たず、CSS上で幅・高さを再計算するだけで済んだ(Field Papers本家が
+  地理座標のboundsオブジェクトを毎回再計算していたのに対し、zukakuでは「常に画面中央
+  固定」というシンプルなケースしかサポートしないため、より単純な実装になった)。
+- Playwright(実際のヘッドレスChromium)で動作確認: 地図表示・スタイル切替・都市切替・
+  グリッドのm×n変更とportrait/landscape切替、いずれも正常動作を確認
+  (スクリーンショットで目視確認済み)。
+- **重要な発見**: `bvmap-dark`スタイル(国土地理院`optimal_bvmap`)は日本国内専用データ。
+  ビエンチャン(ラオス)で選択すると完全に空白の地図になる(attributionも
+  「国土地理院最適化ベクトルタイル」に切り替わることから確認)。`positron`は
+  グローバルデータで問題なく表示される。CLAUDE.md 3節に追記済み。
+- **既知の制約**: このBrowserプレビューツール(埋め込みブラウザペイン)ではWebGL/Worker
+  がうまく機能せず、地図が読み込まれないまま止まる現象を確認した(Playwright実行では
+  問題なし)。zukakuの実装自体の不具合ではなく、プレビュー環境固有の制約と判断した。
+  実ブラウザ(GitHub Pages公開後、または手元のChrome)での確認を別途行うこと。
+
+### Make Atlasボタンの配線(2026-08-30)
+
+「Make Atlas」を実際に配線した。**このUIはHTML/JSのみの静的ページで、ヘッドレス
+レンダラー自体は一切実行しない**(それは別プロセスのNode/Dockerバッチ、ADR 0002/0003)。
+ボタンを押すと:
+
+1. グリッド各セルの四隅を、生きている地図インスタンスの`map.unproject()`で地理座標に
+   変換する(grid.jsのようなMercator数式の再実装ではなく、MapLibre本体の投影ロジックに
+   委譲。bearing/pitchが将来UIに追加されても壊れない)。
+2. `[{style, bbox, orientation, label}, ...]`という配列(`scripts/render/atlas.js`が
+   そのまま読める形式、`sample-atlas.json`と同じshape)を組み立てる。
+3. `atlas-pages.json`としてブラウザダウンロードさせる。
+
+**実機検証(2026-08-30、Playwright)**: 帯広中心部で2行×2列・landscape・bvmap-dark
+を指定し、ダウンロードされたJSONをそのまま`node scripts/render/atlas.js --pages
+atlas-pages.json --out atlas.pdf`に渡したところ、4ページとも隙間なく隣接タイリング
+された正しいアトラスPDFが生成された(西七条南九丁目/西五条南九丁目/西七条南十丁目/
+西六条南十一丁目、と実在の街区名が連続して並ぶことを目視確認)。UI→JSON→PDFの
+一気通貫パスが実証できた。
+
+### 概要ページ(インデックスマップ)の実装(2026-08-30)
+
+ユーザーから「アトラスはp.1で概要を見せる」という指示があり、実装した。
+
+- `computePages()`は、まず各詳細ページのbboxとページ番号(2から開始、概要ページが
+  1ページ目になるため)を組み立て、その後グリッド全体のbbox(`gridOverlay`全体の
+  四隅を`unproject`)と、各詳細ページの`{bbox, label: ページ番号}`配列を`grid`
+  プロパティとして持つ「概要ページ」を先頭に追加する。概要ページの向き
+  (portrait/landscape)は、グリッド全体のアスペクト比から自動選択する(余白の
+  無駄を避けるため)。
+- ヘッドレスレンダラー側([page.html](../scripts/render/page.html))は`grid`
+  パラメータ(JSON)を受け取ると、`map.on("load", ...)`の中でGeoJSONソース
+  (グリッド線用のPolygon、ページ番号ラベル用のPoint)を追加し、通常のレイヤーとして
+  地図に重ねて描画する。これにより概要ページも詳細ページと全く同じ
+  「idle待ち→canvasスナップショット→page.pdf()」のパスをそのまま通る
+  (概要ページ専用の特別なレンダリング経路を作らずに済んだ)。
+- 実機検証: 帯広2×2グリッドで概要ページを生成し、赤いグリッド線と各セル中央に
+  ページ番号(2,3,4,5)が正しい位置に描画されることを目視確認済み。
+
+### 実物サンプルとの照合(2026-08-30)
+
+ユーザーが実際にField Papersで生成したサンプルアトラス
+(`https://fieldpapers.org/atlases/4ibxrgcu`、"Japan GSI Hokkaido"、5ページ)のPDFを
+共有してくれた。実物を見て以下を反映した:
+
+- **グリッド参照は連番ではなく「行=アルファベット、列=数字」**(A1, A2, B1, B2, ...)。
+  当初の連番(2,3,4,5)から変更。`docs/index.html`の`computePages()`で
+  `String.fromCharCode(65+r) + (c+1)`により生成する。
+- **各詳細ページの右上に、その参照(例: `A1`)を大きく表示**し、都市名は小さく下に
+  添える(Field Papers本家は「タイトル/そのページのURL」を2行で表示しており、
+  URLにページ参照が含まれる形。zukakuにはURLが無いため、参照そのものを大きく
+  見せる形に翻案した)。
+- グリッド線・グリッド参照ラベルの色は、本家に合わせて**黒**にした(当初は目立たせる
+  ために赤系の色を使っていたが、実物は装飾を抑えた黒一色)。
+
+**意図的に踏襲しなかった要素**: 本家のページ四隅の点(ドットパターン)とQRコードは、
+スキャンバック(紙から地図アプリへの復元)機能のための位置合わせ・識別用マーカーで
+あり、zukakuのスコープ外(CLAUDE.md 3節、スキャンバック非対応)のため実装しない。
+スケールバーと真北記号(左下)は本家にも実用的な要素として存在するが、今回は未実装
+(優先度は中、将来追加を検討)。
+
+**実機検証**: 帯広2×2グリッド・bvmap-dark・landscapeで、概要ページ(A1/A2/B1/B2の
+グリッド参照付き)と4枚の詳細ページ(各右上に対応する参照を表示)を生成し、
+本家のレイアウト意図(左上=ブランド/コンテキスト情報、右上=タイトル/参照)を
+再現できていることを目視確認した。
+
+### 印刷仕上げの調整(2026-08-30)
+
+ユーザーからの追加指示3点を反映した:
+
+1. **左上のスタイル名ラベルをPDFから削除**(範囲指定UI側のスタイル選択ボタン
+   `bvmap-dark`/`positron`はそのまま残す — UIとPDF出力は別の関心事として扱う)。
+2. **各ページ左下にスケールバー**。自前実装せず、MapLibre GL JS標準の
+   `ScaleControl`(`bottom-left`に追加)を使う。これは通常のDOM要素であり
+   WebGLキャンバスではないため、`page.pdf()`のキャンバス欠落問題([検証結果]の
+   canvas.toDataURL()ワークアラウンド参照)を最初から回避できる。ページごとに
+   実際のzoom/緯度に応じた適切な縮尺(例: 「30 m」「20 m」)が自動計算される
+   ことを実機確認。
+3. **全ページ四辺に8mmの印刷マージン**。`#map`のCSS位置を`inset:0`から
+   `top/left/right/bottom: 8mm`に変更し、地図(WebGLキャンバス→スナップショット後は
+   `<img>`)はそのマージン内に収まる。プリンタの印字不可領域や、綴じ穴等を避ける
+   ための一般的な印刷上の配慮。
+
+3点とも[scripts/render/page.html](../scripts/render/page.html)に実装し、帯広の
+サンプルで目視確認済み。
+
+続けて、空いた左上に**プロダクト名「Zukaku」のワードマーク**を追加した(Field Papers
+本家が同じ位置に手書き風ロゴを置いているのに倣った、シンプルなテキストのみ)。
+
+さらに2点追加(2026-08-30):
+
+- **図郭線**: `#map`に`box-sizing: border-box`+細い黒枠(`0.75pt`)を付け、8mm
+  マージンの境界を明示した。地図が僅かに傾いて印刷・裁断されても図郭の範囲が
+  分かるようにするための、一般的な地図製品の慣習。
+- **方位記号(北)**: 自前で描かず、MapLibre GL JS標準の`NavigationControl`
+  (`showZoom:false, showCompass:true`)を右下に追加した。zukakuはbearing制御を
+  持たない(常に0)ため、コンパスボタンは常に真上=北を指す状態になり、そのまま
+  簡易的な北向き表示として機能する。見た目は装飾的な方位記号というよりUIボタン
+  風だが、「ありもので簡単であれば」という要望には合致する。
+
+## 影響
+
+- 範囲指定UIの実装(GitHub Pages上、[ADR 0003](0003-docs-reserved-for-github-pages.md))に
+  着手する際は、本ADRの内容(画面中央固定グリッド、+/-ボタンでの行列増減、
+  bbox算出は`containerPointToLatLng`相当)を土台にする。
+- 実装言語はMapLibre GL JS(Leafletではない)になるが、MapLibre GL JSにも
+  `map.unproject(point)`という同等のAPIがあり、同じロジックを移植できる見込み。
+- UI実装自体はまだ着手していない。着手時には改めてプロトタイプの方向性を
+  ユーザーに確認する。
+
+## 参考
+
+- Field Papers Compose画面: https://fieldpapers.org/compose
+- fieldpapers/fp-web (現行実装):
+  https://github.com/fieldpapers/fp-web
+- leaflet-page-composer.js:
+  https://github.com/fieldpapers/fp-web/blob/main/app/assets/javascripts/leaflet/leaflet-page-composer.js

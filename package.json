@@ -1,0 +1,16 @@
+{
+  "name": "zukaku",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Print-ready field atlases from MapLibre + stars.optgeo.org",
+  "scripts": {
+    "render": "node scripts/render/render.js",
+    "atlas": "node scripts/render/atlas.js"
+  },
+  "dependencies": {
+    "maplibre-gl": "^6.6.0",
+    "pdf-lib": "^1.17.1",
+    "playwright": "^1.48.2"
+  }
+}

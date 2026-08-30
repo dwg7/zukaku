@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zukaku — 範囲指定</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; }
+
+  .panel {
+    position: absolute;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; color: #666; letter-spacing: 0.04em; }
+
+  /* top-left: style selector */
+  #style-panel { top: 12px; left: 12px; }
+  #style-panel button, #city-panel button {
+    display: block;
+    width: 100%;
+    margin: 2px 0;
+    padding: 4px 10px;
+    text-align: left;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+  }
+  #style-panel button[aria-pressed="true"], #city-panel button[aria-pressed="true"] {
+    background: #2b6cb0;
+    color: #fff;
+    border-color: #2b6cb0;
+  }
+
+  /* top-right: city selector */
+  #city-panel { top: 12px; right: 12px; }
+
+  /* top-center: m x n / orientation controls */
+  #grid-panel {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  #grid-panel .field { display: flex; align-items: center; gap: 4px; }
+  #grid-panel button.step {
+    width: 22px; height: 22px;
+    border: 1px solid #ccc; border-radius: 4px;
+    background: #fff; cursor: pointer; font-weight: bold;
+  }
+  #grid-panel .value { min-width: 1.5em; text-align: center; font-variant-numeric: tabular-nums; }
+
+  /* bottom-left: Make Atlas */
+  #make-atlas-panel {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  #make-atlas {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    background: #2b6cb0;
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+  }
+  #download-json {
+    padding: 4px 10px;
+    font-size: 11px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #444;
+    cursor: pointer;
+  }
+
+  /* Field-Papers-style page grid: fixed to the screen center, NOT to the map.
+     The user pans/zooms the map underneath it (ADR 0005). */
+  #grid-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    pointer-events: none;
+    display: grid;
+    outline: 2px solid rgba(0, 0, 0, 0.6);
+  }
+  #grid-overlay .cell {
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    box-sizing: border-box;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="grid-overlay"></div>
+
+<div id="style-panel" class="panel">
+  <h2>Style</h2>
+  <button data-style="bvmap-dark" aria-pressed="false">bvmap-dark</button>
+  <button data-style="positron" aria-pressed="true">positron</button>
+</div>
+
+<div id="city-panel" class="panel">
+  <h2>City</h2>
+  <button data-city="obihiro" aria-pressed="true">帯広</button>
+  <button data-city="sapporo" aria-pressed="false">札幌</button>
+  <button data-city="vientiane" aria-pressed="false">ビエンチャン</button>
+</div>
+
+<div id="grid-panel" class="panel">
+  <div class="field">
+    <span>rows (m)</span>
+    <button class="step" data-adjust="rows" data-delta="-1">−</button>
+    <span class="value" id="rows-value">1</span>
+    <button class="step" data-adjust="rows" data-delta="1">+</button>
+  </div>
+  <div class="field">
+    <span>cols (n)</span>
+    <button class="step" data-adjust="cols" data-delta="-1">−</button>
+    <span class="value" id="cols-value">1</span>
+    <button class="step" data-adjust="cols" data-delta="1">+</button>
+  </div>
+  <div class="field">
+    <button class="step" id="orientation-toggle" style="width: auto; padding: 2px 10px;">
+      portrait
+    </button>
+  </div>
+</div>
+
+<!-- ADR 0005: this UI never runs the headless renderer itself (that's a
+     separate GitHub Actions / local batch step, ADR 0002/0003/0006). "Make
+     Atlas" opens GitHub's own pre-filled "create file" page (the user's own
+     logged-in session handles auth, nothing is embedded here) so submitting
+     a PR triggers the Actions workflow that runs scripts/render/atlas.js. -->
+<div id="make-atlas-panel">
+  <button id="make-atlas">Make Atlas</button>
+  <button id="download-json">Download JSON only</button>
+</div>
+
+<script type="module">
+import { Map as MapLibreMap } from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
+
+const STARS = "https://stars.optgeo.org/style";
+
+const CITIES = {
+  obihiro: { label: "帯広", center: [143.1954, 42.9203], zoom: 15 },
+  sapporo: { label: "札幌", center: [141.3508, 43.0686], zoom: 15 },
+  vientiane: { label: "ビエンチャン", center: [102.6331, 17.9757], zoom: 15 },
+};
+
+// A4 aspect ratio (width/height), matching scripts/render/lib.js's viewportFor().
+const A4_ASPECT = { portrait: 210 / 297, landscape: 297 / 210 };
+
+const state = {
+  style: "positron",
+  city: "obihiro",
+  rows: 1,
+  cols: 1,
+  orientation: "portrait",
+};
+
+const map = new MapLibreMap({
+  container: "map",
+  style: `${STARS}/${state.style}`,
+  center: CITIES[state.city].center,
+  zoom: CITIES[state.city].zoom,
+  // ADR 0004: no 3D. Same reasoning as the headless renderer (page.html).
+  projection: "mercator",
+});
+
+window.__zukakuMap = map; // debugging aid
+window.__zukakuMapErrors = [];
+map.on("error", (e) => window.__zukakuMapErrors.push(String((e && e.error && e.error.message) || e)));
+map.on("load", () => map.setTerrain(null));
+
+// --- Style selector (top-left) ---
+const stylePanel = document.getElementById("style-panel");
+stylePanel.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-style]");
+  if (!btn) return;
+  state.style = btn.dataset.style;
+  for (const b of stylePanel.querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", String(b === btn));
+  }
+  map.setStyle(`${STARS}/${state.style}`);
+  map.once("style.load", () => map.setTerrain(null));
+});
+
+// --- City selector (top-right) ---
+const cityPanel = document.getElementById("city-panel");
+cityPanel.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-city]");
+  if (!btn) return;
+  state.city = btn.dataset.city;
+  for (const b of cityPanel.querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", String(b === btn));
+  }
+  const c = CITIES[state.city];
+  map.flyTo({ center: c.center, zoom: c.zoom });
+});
+
+// --- m x n grid + orientation (top-center) ---
+const rowsValue = document.getElementById("rows-value");
+const colsValue = document.getElementById("cols-value");
+const orientationToggle = document.getElementById("orientation-toggle");
+const gridOverlay = document.getElementById("grid-overlay");
+
+// Base on-screen cell size (CSS px) for the preview grid; scaled down if the
+// full m x n grid would not fit comfortably in the viewport.
+const BASE_CELL_WIDTH = 130;
+
+function renderGrid() {
+  const aspect = A4_ASPECT[state.orientation]; // width / height
+  const cellWidth = BASE_CELL_WIDTH;
+  const cellHeight = cellWidth / aspect;
+
+  const totalWidth = cellWidth * state.cols;
+  const totalHeight = cellHeight * state.rows;
+  const maxWidth = window.innerWidth * 0.7;
+  const maxHeight = window.innerHeight * 0.6;
+  const scale = Math.min(1, maxWidth / totalWidth, maxHeight / totalHeight);
+
+  gridOverlay.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
+  gridOverlay.style.gridTemplateRows = `repeat(${state.rows}, 1fr)`;
+  gridOverlay.style.width = `${totalWidth * scale}px`;
+  gridOverlay.style.height = `${totalHeight * scale}px`;
+
+  gridOverlay.innerHTML = "";
+  for (let i = 0; i < state.rows * state.cols; i++) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    gridOverlay.appendChild(cell);
+  }
+
+  rowsValue.textContent = String(state.rows);
+  colsValue.textContent = String(state.cols);
+  orientationToggle.textContent = state.orientation;
+}
+
+document.getElementById("grid-panel").addEventListener("click", (e) => {
+  const stepBtn = e.target.closest("button[data-adjust]");
+  if (stepBtn) {
+    const key = stepBtn.dataset.adjust;
+    const delta = Number(stepBtn.dataset.delta);
+    state[key] = Math.min(10, Math.max(1, state[key] + delta));
+    renderGrid();
+    return;
+  }
+  if (e.target === orientationToggle) {
+    state.orientation = state.orientation === "portrait" ? "landscape" : "portrait";
+    renderGrid();
+  }
+});
+
+window.addEventListener("resize", renderGrid);
+renderGrid();
+
+// --- Make Atlas (bottom-left) ---
+// Per-cell bbox is computed with the live map's own map.unproject(), the same
+// projection MapLibre GL JS uses internally, rather than re-deriving Mercator
+// math by hand (ADR 0005) — this stays correct even if bearing/pitch controls
+// are added to this UI later, unlike scripts/render/grid.js's Node-side math
+// (which only supports bearing=0, fine for its own headless-batch use case).
+function computePages() {
+  const rect = gridOverlay.getBoundingClientRect();
+  const cellWidth = rect.width / state.cols;
+  const cellHeight = rect.height / state.rows;
+  const cityLabel = CITIES[state.city].label;
+
+  // Page 1 is always an overview/index page (ADR 0005). Detail pages carry a
+  // Field-Papers-style grid reference — row letter + column number (A1, A2,
+  // B1, B2, ...) — rather than a running page number, matching the sample
+  // atlas the user shared (fieldpapers.org/atlases/4ibxrgcu).
+  const detailPages = [];
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      const left = rect.left + c * cellWidth;
+      const top = rect.top + r * cellHeight;
+      const nw = map.unproject([left, top]);
+      const se = map.unproject([left + cellWidth, top + cellHeight]);
+      const gridRef = `${String.fromCharCode(65 + r)}${c + 1}`;
+      detailPages.push({
+        style: state.style,
+        bbox: [nw.lng, se.lat, se.lng, nw.lat], // west, south, east, north
+        orientation: state.orientation,
+        label: cityLabel,
+        ref: gridRef, // shown prominently, top-right (ADR 0005)
+      });
+    }
+  }
+
+  const overallNW = map.unproject([rect.left, rect.top]);
+  const overallSE = map.unproject([rect.left + rect.width, rect.top + rect.height]);
+  // Pick whichever A4 orientation better matches the full grid's aspect ratio,
+  // so the overview page doesn't waste paper on empty margins.
+  const cellAspect = A4_ASPECT[state.orientation];
+  const overallAspect = (state.cols / state.rows) * cellAspect;
+  const overviewOrientation = overallAspect >= 1 ? "landscape" : "portrait";
+
+  const overviewPage = {
+    style: state.style,
+    bbox: [overallNW.lng, overallSE.lat, overallSE.lng, overallNW.lat],
+    orientation: overviewOrientation,
+    label: cityLabel,
+    ref: "概要",
+    grid: detailPages.map((p) => ({ bbox: p.bbox, label: p.ref })),
+  };
+
+  return [overviewPage, ...detailPages];
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// GitHub's own "create new file" page, pre-filled via query params, opened
+// in the viewer's already-logged-in session. No credentials are ever held or
+// transmitted by this page — GitHub itself is the entire auth boundary. If
+// the viewer lacks push access to GITHUB_BRANCH, GitHub offers "create a new
+// branch and start a pull request" on save, same as any "edit this page on
+// GitHub" link. See ADR 0006.
+const GITHUB_REPO = "dwg7/zukaku";
+const GITHUB_BRANCH = "main";
+
+function githubCreateFileUrl(filename, content) {
+  const params = new URLSearchParams({ filename, value: content });
+  return `https://github.com/${GITHUB_REPO}/new/${GITHUB_BRANCH}?${params}`;
+}
+
+function requestFilename() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `requests/atlas-${stamp}.json`;
+}
+
+const makeAtlasButton = document.getElementById("make-atlas");
+makeAtlasButton.addEventListener("click", () => {
+  const pages = computePages();
+  const url = githubCreateFileUrl(requestFilename(), JSON.stringify(pages));
+  window.open(url, "_blank", "noopener");
+});
+
+const downloadJsonButton = document.getElementById("download-json");
+downloadJsonButton.addEventListener("click", () => {
+  const pages = computePages();
+  downloadJSON("atlas-pages.json", pages);
+
+  const original = downloadJsonButton.textContent;
+  downloadJsonButton.textContent = `Downloaded (${pages.length} pages)`;
+  setTimeout(() => {
+    downloadJsonButton.textContent = original;
+  }, 2000);
+});
+</script>
+</body>
+</html>

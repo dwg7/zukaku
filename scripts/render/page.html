@@ -1,0 +1,214 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>zukaku render page</title>
+<link rel="stylesheet" href="../../node_modules/maplibre-gl/dist/maplibre-gl.css">
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  /* Print margin (ADR 0005): every page reserves an 8mm blank border on all
+     four sides — printers generally can't print to the true paper edge, and
+     it keeps content off a physical trim/hole-punch line. The map fills
+     exactly what's left. */
+  #map {
+    position: absolute;
+    top: 8mm; left: 8mm; right: 8mm; bottom: 8mm;
+    box-sizing: border-box;
+    /* Neatline: marks exactly where the map frame ends, so the printed page
+       reads unambiguously even if trimmed slightly off-square. */
+    border: 0.75pt solid #000;
+  }
+  /* Placeholder page decoration for verification only; the real print-frame
+     layout (north arrow, page index styling, etc.) is a separate design
+     decision (ADR 0005) not yet made. */
+  #label {
+    position: absolute;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 3mm 5mm;
+    font: bold 5mm/1.3 sans-serif;
+    border-radius: 1mm;
+    top: 10mm; right: 10mm; text-align: right; /* grid ref (large) + city name (small) */
+  }
+  #label .ref { display: block; font-size: 8mm; }
+  #label .city { display: block; font-size: 3.5mm; font-weight: normal; color: #444; }
+  /* Product wordmark, top-left — Field Papers' own atlases carry a "Field
+     Papers" logo in the same corner (ADR 0005). */
+  #brand {
+    position: absolute;
+    z-index: 10;
+    top: 10mm; left: 10mm;
+    font: bold 6mm/1 sans-serif;
+    color: #222;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="label"></div>
+<div id="brand">Zukaku</div>
+<script type="module">
+  // maplibre-gl v6 ships ESM-only (dist/maplibre-gl.mjs); there is no more
+  // UMD bundle that attaches a global `maplibregl`.
+  import { Map as MapLibreMap, ScaleControl, NavigationControl } from "../../node_modules/maplibre-gl/dist/maplibre-gl.mjs";
+
+  const params = new URLSearchParams(location.search);
+  const styleId = params.get("style") || "positron";
+  const bearing = parseFloat(params.get("bearing") || "0");
+  const pitch = parseFloat(params.get("pitch") || "0");
+  const bboxParam = params.get("bbox"); // "west,south,east,north"
+  const label = params.get("label"); // city name, shown top-right (small)
+  const ref = params.get("ref"); // grid reference (A1, B2, ...) or "概要", shown top-right (large)
+  const gridParam = params.get("grid"); // JSON: [{bbox:[w,s,e,n], label}, ...] — overview page only
+
+  const labelEl = document.getElementById("label");
+  if (ref) {
+    const refSpan = document.createElement("span");
+    refSpan.className = "ref";
+    refSpan.textContent = ref;
+    labelEl.appendChild(refSpan);
+  }
+  if (label) {
+    const citySpan = document.createElement("span");
+    citySpan.className = "city";
+    citySpan.textContent = label;
+    labelEl.appendChild(citySpan);
+  }
+
+  window.__zukakuReady = false;
+  window.__zukakuError = null;
+
+  const mapOptions = {
+    container: "map",
+    style: `https://stars.optgeo.org/style/${styleId}`,
+    bearing: bearing,
+    pitch: pitch,
+    interactive: false,
+    attributionControl: false,
+    fadeDuration: 0,
+    // ADR 0004: no 3D. Globe projection would also break the "orthogonal
+    // top-down page" assumption an atlas depends on, same as terrain would.
+    projection: "mercator",
+  };
+
+  if (bboxParam) {
+    // bbox → camera conversion is delegated to MapLibre GL JS's own fitBounds
+    // logic (via the constructor's `bounds` option) rather than reimplemented by
+    // hand, so the same projection math the interactive UI uses also drives the
+    // headless renderer.
+    const [west, south, east, north] = bboxParam.split(",").map(Number);
+    mapOptions.bounds = [
+      [west, south],
+      [east, north],
+    ];
+    mapOptions.fitBoundsOptions = { padding: 0, animate: false };
+  } else {
+    mapOptions.center = [
+      parseFloat(params.get("lon") || "139.767"),
+      parseFloat(params.get("lat") || "35.681"),
+    ];
+    mapOptions.zoom = parseFloat(params.get("zoom") || "14");
+  }
+
+  const map = new MapLibreMap(mapOptions);
+
+  // Scale bar, bottom-left of each page. This is plain DOM (not the WebGL
+  // canvas), so it doesn't need the toDataURL() workaround below — Chromium's
+  // print-to-PDF renders ordinary HTML/CSS controls fine on its own.
+  map.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
+
+  // North arrow, bottom-right: reusing MapLibre's built-in compass button
+  // (zoom buttons turned off) rather than drawing one from scratch. Bearing
+  // is always 0 (ADR 0004/CLAUDE.md scope has no rotation UI yet), so it
+  // simply points up — exactly what a static north arrow should do.
+  map.addControl(new NavigationControl({ showZoom: false, showCompass: true }), "bottom-right");
+
+  map.on("error", (e) => {
+    window.__zukakuError = String((e && e.error && e.error.message) || e);
+  });
+
+  // ADR 0004: zukaku always strips terrain, regardless of what the fetched style
+  // declares. A print atlas is composed of separately-printed pages meant to be
+  // read (and physically taped together) as an orthogonal top-down view; terrain's
+  // perspective tilt would make adjacent pages fail to line up at the seams.
+  map.on("load", () => {
+    map.setTerrain(null);
+
+    // Overview/index page (ADR 0005): draw each detail page's cell as a
+    // rectangle + page-number label, geographically accurate, so the overview
+    // becomes a normal map layer baked into the same canvas snapshot below —
+    // no separate HTML overlay/compositing step needed.
+    if (gridParam) {
+      const cells = JSON.parse(gridParam);
+      const polygons = {
+        type: "FeatureCollection",
+        features: cells.map((c) => ({
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [c.bbox[0], c.bbox[3]],
+                [c.bbox[2], c.bbox[3]],
+                [c.bbox[2], c.bbox[1]],
+                [c.bbox[0], c.bbox[1]],
+                [c.bbox[0], c.bbox[3]],
+              ],
+            ],
+          },
+        })),
+      };
+      const points = {
+        type: "FeatureCollection",
+        features: cells.map((c) => ({
+          type: "Feature",
+          properties: { label: c.label },
+          geometry: {
+            type: "Point",
+            coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
+          },
+        })),
+      };
+      // Field Papers' own sample atlas (fieldpapers.org/atlases/4ibxrgcu) uses
+      // plain thin black grid lines and black grid-reference labels, not a
+      // bright accent color — matched here deliberately (ADR 0005).
+      map.addSource("zukaku-grid-lines", { type: "geojson", data: polygons });
+      map.addLayer({
+        id: "zukaku-grid-lines",
+        type: "line",
+        source: "zukaku-grid-lines",
+        paint: { "line-color": "#000", "line-width": 1.5 },
+      });
+      map.addSource("zukaku-grid-labels", { type: "geojson", data: points });
+      map.addLayer({
+        id: "zukaku-grid-labels",
+        type: "symbol",
+        source: "zukaku-grid-labels",
+        layout: { "text-field": ["get", "label"], "text-size": 28, "text-font": ["Noto Sans Bold"] },
+        paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 2 },
+      });
+    }
+  });
+
+  map.once("idle", () => {
+    // Chromium's print-to-PDF pipeline (used by Playwright's page.pdf()) does not
+    // reliably capture live WebGL canvas content. Snapshot the canvas to a PNG data
+    // URL and swap it in as a plain <img>, which print-to-PDF handles correctly.
+    const canvas = map.getCanvas();
+    const dataUrl = canvas.toDataURL("image/png");
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    img.style.position = "absolute";
+    img.style.inset = "0";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    // Appended inside #map (the 8mm-inset box) rather than body, so the
+    // snapshot lands exactly where the live canvas was, margin included.
+    document.getElementById("map").appendChild(img);
+    canvas.parentElement.style.display = "none";
+    window.__zukakuReady = true;
+  });
+</script>
+</body>
+</html>

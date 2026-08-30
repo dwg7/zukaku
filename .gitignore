@@ -1,0 +1,5 @@
+node_modules/
+*.pdf
+*.pmtiles
+*.mbtiles
+.DS_Store

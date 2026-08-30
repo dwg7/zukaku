@@ -1,0 +1,19 @@
+[
+  {
+    "style": "positron",
+    "bbox": [139.750, 35.670, 139.780, 35.690],
+    "orientation": "portrait"
+  },
+  {
+    "style": "positron",
+    "lon": 139.767,
+    "lat": 35.681,
+    "zoom": 15,
+    "orientation": "landscape"
+  },
+  {
+    "style": "bvmap-dark",
+    "bbox": [139.755, 35.675, 139.775, 35.688],
+    "orientation": "portrait"
+  }
+]

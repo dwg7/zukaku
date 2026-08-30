@@ -1,0 +1,54 @@
+name: Render atlas
+
+# ADR 0006: this workflow is how "properly used" zukaku turns a range-picker
+# request into a PDF, without needing a persistent server anywhere (ADR
+# 0002's whole point). It fires whenever a requests/*.json file lands on a
+# branch — normally via the GitHub "propose new file" flow the range-picker
+# UI (docs/index.html) opens for the user.
+on:
+  push:
+    paths:
+      - "requests/*.json"
+  pull_request:
+    paths:
+      - "requests/*.json"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    # Matches the playwright version pinned in package.json — Playwright
+    # requires its own npm package version and the browser build inside the
+    # image to match exactly.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-jammy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # No actions/setup-node step: the Playwright image ships Node.js
+      # already (verified locally: v24.18.1 in v1.62.1-jammy), and it's new
+      # enough for zukaku's code.
+      - run: npm ci
+
+      - name: Find changed atlas requests
+        id: changed
+        uses: tj-actions/changed-files@v45
+        with:
+          files: requests/*.json
+
+      - name: Render each changed request to PDF
+        if: steps.changed.outputs.any_changed == 'true'
+        run: |
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            out="${f%.json}.pdf"
+            echo "Rendering $f -> $out"
+            node scripts/render/atlas.js --pages "$f" --out "$out"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: steps.changed.outputs.any_changed == 'true'
+        with:
+          name: atlas-pdfs
+          path: requests/*.pdf
+          retention-days: 30
