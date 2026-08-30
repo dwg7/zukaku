@@ -61,6 +61,7 @@
   const ref = params.get("ref"); // grid reference (A1, B2, ...) or "概要", shown top-right
   const gridParam = params.get("grid"); // JSON: [{bbox:[w,s,e,n], label}, ...] — overview page only
   const title = params.get("title"); // optional map title, baked in as plain text (never an <input>)
+  const renderScaleParam = params.get("renderScale"); // JSON {x,y} — overview-only zoom-level shift, see below
 
   // Plain text, top-left, replacing the bare "Zukaku" wordmark when a title
   // is set. This is a styled <div>, not an <input> — the title text box in
@@ -79,8 +80,39 @@
   window.__zukakuReady = false;
   window.__zukakuError = null;
 
+  // Zoom-level shift (2026-08-31, ADR 0009): the overview page fits a much
+  // larger bbox into the same page-sized frame a detail page uses, so it
+  // would normally be drawn from coarser (lower-zoom) vector-tile data than
+  // the detail pages next to it. To match them, stage the overview in an
+  // offscreen container `renderScale` times bigger than the print frame
+  // (one axis per grid dimension) so MapLibre fits the same bbox at close
+  // to the zoom a detail page would use, then snapshot and shrink it back
+  // down into the real frame below. Same effect as the browser's own
+  // "Ctrl + -" page zoom (same tiles fetched, just displayed smaller),
+  // scripted instead of relying on real browser zoom.
+  let renderScale = null;
+  if (renderScaleParam) {
+    try {
+      renderScale = JSON.parse(renderScaleParam);
+    } catch {
+      renderScale = null;
+    }
+  }
+  const frameEl = document.getElementById("map");
+  let renderContainer = frameEl;
+  let offscreenStage = null;
+  if (renderScale && (renderScale.x > 1 || renderScale.y > 1)) {
+    const frameRect = frameEl.getBoundingClientRect();
+    offscreenStage = document.createElement("div");
+    offscreenStage.style.cssText = `position:absolute; left:-99999px; top:0; width:${
+      frameRect.width * renderScale.x
+    }px; height:${frameRect.height * renderScale.y}px;`;
+    document.body.appendChild(offscreenStage);
+    renderContainer = offscreenStage;
+  }
+
   const mapOptions = {
-    container: "map",
+    container: renderContainer,
     style: `https://stars.optgeo.org/style/${styleId}`,
     bearing: bearing,
     pitch: pitch,
@@ -218,10 +250,11 @@
     img.style.inset = "0";
     img.style.width = "100%";
     img.style.height = "100%";
-    // Appended inside #map (the 15mm-inset box) rather than body, so the
-    // snapshot lands exactly where the live canvas was, margin included.
-    document.getElementById("map").appendChild(img);
-    canvas.parentElement.style.display = "none";
+    // Appended inside #map (the 15mm-inset frame), not the (possibly
+    // offscreen and oversized, see renderScale above) render container —
+    // the snapshot always lands in the real frame at its real print size,
+    // however big the source canvas was.
+    frameEl.appendChild(img);
 
     // Move the scale bar out of the map frame entirely, into the footer
     // band below the neatline (2026-08-31: "put nothing on top of the map
@@ -229,6 +262,12 @@
     // page's zoom/latitude, and nothing needs to keep updating after this.
     const scaleEl = map.getContainer().querySelector(".maplibregl-ctrl-scale");
     if (scaleEl) document.getElementById("footer").appendChild(scaleEl);
+
+    if (offscreenStage) {
+      offscreenStage.remove(); // drop the oversized staging canvas entirely
+    } else {
+      canvas.parentElement.style.display = "none";
+    }
 
     window.__zukakuReady = true;
   });

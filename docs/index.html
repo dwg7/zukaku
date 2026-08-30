@@ -550,8 +550,23 @@ function computePages() {
     grid: allCells, // includes excluded cells, grayed out on the overview (ADR 0008)
     // Breathing room around the grid block so it doesn't touch the print
     // frame (user feedback, 2026-08-30: portrait overview looked cramped).
-    // Detail pages keep padding 0 to fill the page edge-to-edge.
-    padding: 50,
+    // Scaled by renderScale below so it stays visually proportional once
+    // the oversized render is shrunk back down (2026-08-31). Detail pages
+    // keep padding 0 to fill the page edge-to-edge.
+    padding: 50 * Math.max(state.cols, state.rows),
+    // Zoom-level shift (2026-08-31, ADR 0009): the overview normally has to
+    // fit a much larger bbox into the same page-sized frame as a detail
+    // page, so it ends up drawn from coarser (lower-zoom) vector-tile data
+    // than the detail pages next to it. renderScale tells the render step
+    // to stage this page in an offscreen container that many times bigger
+    // (one axis per grid dimension) before snapshotting, so MapLibre fits
+    // the same bbox at roughly the zoom a detail page would use, then
+    // shrink the snapshot back down to the normal print footprint — the
+    // same effect as the browser's own "Ctrl + -" page zoom (same tiles
+    // fetched, just displayed smaller), scripted instead of relying on
+    // real browser zoom. Consumed by preparePrintPages() below and by
+    // scripts/render/page.html (via lib.js#renderPage's query string).
+    renderScale: { x: state.cols, y: state.rows },
   };
 
   return [overviewPage, ...detailPages];
@@ -613,6 +628,15 @@ async function preparePrintPages(pages) {
   for (const spec of pages) {
     const orientation = spec.orientation === "landscape" ? "landscape" : "portrait";
     const pxSize = viewportPxFor(orientation);
+    // Zoom-level shift (ADR 0009): stage the overview in a bigger-than-usual
+    // container so it fits its (much larger) bbox at close to the same zoom
+    // a detail page would — see the renderScale comment in computePages().
+    // The final display size is unaffected: .print-map's CSS box stays
+    // fixed and the snapshot <img> is scaled to fill it (object-fit: fill).
+    if (spec.renderScale) {
+      pxSize.width *= spec.renderScale.x;
+      pxSize.height *= spec.renderScale.y;
+    }
 
     // Offscreen staging container: MapLibre needs a real laid-out element to
     // size its canvas against, so this can't be display:none. Moved far off

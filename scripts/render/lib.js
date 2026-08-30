@@ -92,6 +92,9 @@ export async function renderPage(browser, port, spec) {
   if (spec.grid) qs.set("grid", JSON.stringify(spec.grid));
   if (spec.title) qs.set("title", spec.title);
   if (spec.padding) qs.set("padding", String(spec.padding));
+  // Zoom-level shift (ADR 0009): overview-only, see page.html and
+  // docs/index.html's computePages() for what this does.
+  if (spec.renderScale) qs.set("renderScale", JSON.stringify(spec.renderScale));
 
   const url = `http://127.0.0.1:${port}/scripts/render/page.html?${qs}`;
 
