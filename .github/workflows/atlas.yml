@@ -37,6 +37,7 @@ jobs:
       # meant to hold only a handful of disposable files (see
       # requests/README.md), so just render everything present each run.
       - name: Render every atlas request to PDF
+        shell: bash
         run: |
           shopt -s nullglob
           files=(requests/*.json)
