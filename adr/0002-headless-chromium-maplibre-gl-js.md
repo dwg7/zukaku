@@ -218,14 +218,35 @@ bbox/style/ページ設定を渡した上で)読み込んで `page.pdf()` する
   `sample-atlas.json`の3ページ生成が約12.5秒(ホスト実行の約9.6秒よりやや遅いが、
   同オーダー)。
 
-## 検証が必要な事項(未実施、優先度低)
+## 検証結果その4: 外部ホスト依存・cache-busting(2026-08-30)
 
-1. GSI GitHub Pages等、stars以外の外部ホストへの依存が、バッチ生成の安定性に
-   実際どの程度影響するか(可用性・レイテンシの実測、必要ならミラー/キャッシュの検討)。
-2. cache-busting用クエリの要否・付与方法(常時付けるか、明示的な再生成時のみか)。
-3. GitHub Pages上の範囲指定UIを、ヘッドレスPDF生成からも読み込んでフロントエンドを
+現行2スタイルが依存する外部ホストを実機確認した:
+
+| スタイル | アセット | ホスト | cache-control | 応答 |
+|---|---|---|---|---|
+| bvmap-dark | sprite/glyphs | gsi-cyberjapan.github.io | max-age=600 | 200, ~100ms |
+| positron | sprite | openmaptiles.github.io | max-age=600 | 200, ~100ms |
+| positron | glyphs | tile.openstreetmap.jp | (GitHub Pages系とは別、生nginx) | 200, ~150ms |
+
+- **GSI・OpenMapTilesの2つはGitHub Pages(Fastly CDN)**でホストされており、
+  可用性・速度とも実用上十分。
+- **`tile.openstreetmap.jp`(positronのglyphs)は単体nginxで、GitHub Pagesほどの
+  冗長性は無いと見られる**。positron使用時の唯一のやや弱いリンクだが、OSM Japan
+  コミュニティが運用する既知のインフラであり、応答も速い。ミラー・キャッシュを
+  今すぐ用意するほどの根拠はないと判断。
+- **cache-busting用クエリは不要と判断した**。sprite/glyphsは実質的に不変
+  (スタイル更新頻度に対して更新がほぼ無い)アセットであり、`max-age=600`程度の
+  キャッシュが効いていても実害は無い。当初懸念していたのはstars自身のタイル/
+  スタイルデータの鮮度(OSM編集の反映速度)であり、こちらは変更頻度も低く、
+  10ページ程度・低頻度利用というzukakuの実利用パターンでは問題にならないと判断した。
+- 結論として、**現状の実装のまま(ミラーやcache-busting機構を追加しない)で
+  十分**。将来、外部依存ホストの障害が実際に問題になった場合に改めて対処する。
+
+## 検証が必要な事項(残っているもの、優先度低)
+
+1. GitHub Pages上の範囲指定UIを、ヘッドレスPDF生成からも読み込んでフロントエンドを
    一本化できるか。
-4. ページ枚数が増えた場合のPDFファイルサイズの最適化(PNG→JPEG、deviceScaleFactorの
+2. ページ枚数が増えた場合のPDFファイルサイズの最適化(PNG→JPEG、deviceScaleFactorの
    調整など)。ただし当面10ページ程度という前提では優先度は低い。
 
 ## 影響
