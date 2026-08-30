@@ -8,8 +8,8 @@
       42.92174427369849
     ],
     "orientation": "landscape",
-    "label": "\u5e2f\u5e83 (final push test)",
-    "ref": "\u6982\u8981",
+    "label": "帯広",
+    "ref": "概要",
     "grid": [
       {
         "bbox": [
@@ -58,7 +58,7 @@
       42.92174427369849
     ],
     "orientation": "landscape",
-    "label": "\u5e2f\u5e83",
+    "label": "帯広",
     "ref": "A1"
   },
   {
@@ -70,7 +70,7 @@
       42.92174427369849
     ],
     "orientation": "landscape",
-    "label": "\u5e2f\u5e83",
+    "label": "帯広",
     "ref": "A2"
   },
   {
@@ -82,7 +82,7 @@
       42.9203
     ],
     "orientation": "landscape",
-    "label": "\u5e2f\u5e83",
+    "label": "帯広",
     "ref": "B1"
   },
   {
@@ -94,7 +94,7 @@
       42.9203
     ],
     "orientation": "landscape",
-    "label": "\u5e2f\u5e83",
+    "label": "帯広",
     "ref": "B2"
   }
 ]

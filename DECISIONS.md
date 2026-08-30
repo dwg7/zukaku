@@ -59,9 +59,9 @@ UXだと判明した(「Pin grid to map」で地理座標固定に切り替え�
 範囲指定UI(静的ページ)はヘッドレスレンダラーを実行できない。書き込み権限つき
 トークンを埋め込まずに「Make Atlas」からPRを起票する方法として、GitHubの
 `/new/{branch}?filename=&value=`URL(ログイン済みユーザー向けの新規ファイル
-事前入力画面)を使うことにした。`requests/*.json`へのpush/PRをトリガーに
-`.github/workflows/atlas.yml`が`atlas.js`を実行しPDFをartifactとして出力する。
-Playwright+MapLibre GL JS+starsタイル+PDF保存がActions相当のコンテナ
-(`mcr.microsoft.com/playwright:v1.62.1-jammy`)で動くことはローカルで実機確認済み。
-実際のGitHub上での動作(PR起票からActions実行まで)はpush未実施のため未検証。
+事前入力画面)を使うことにした。リクエストは`docs/requests/*.json`、生成された
+PDFは`docs/responses/*.pdf`に置く(`docs/`配下なのでGitHub Pagesから直接PDFを
+開ける)。レンダリングは「既に対応するPDFがあるリクエストはスキップする」方式
+(git diffに依存しない、蓄積しても性能劣化しない)。実際の`dwg7/zukaku`リポジトリで
+push・PR両トリガーの動作、GitHub Pagesの配信まで実機確認済み。
 → [adr/0006](adr/0006-github-actions-render-pipeline.md)

@@ -1,4 +1,11 @@
-# ADR 0003: `docs/` はGitHub Pages(範囲指定UI)用に予約し、ADRは `adr/` に置く
+# ADR 0003: `docs/` はGitHub Pages配信物用に予約し、ADRは `adr/` に置く
+
+> **2026-08-30追記**: 当初は「範囲指定UI専用」としていたが、
+> [ADR 0006](0006-github-actions-render-pipeline.md)で`docs/requests/`
+> (リクエストJSON)・`docs/responses/`(生成されたPDF)も`docs/`配下に
+> 置くことにした。「GitHub Pagesが配信するものは全部`docs/`」という
+> より一般化した原則に置き換わっている。以下の本文は当初の記述のまま
+> 残すが、「範囲指定UI専用」という記述は上記の通り更新されたと理解すること。
 
 - ステータス: 採用
 - 日付: 2026-08-30
