@@ -71,6 +71,13 @@
     align-items: flex-start;
     gap: 6px;
   }
+  #page-estimate {
+    font-size: 11px;
+    color: #333;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
   #make-atlas {
     padding: 10px 20px;
     font-size: 14px;
@@ -153,6 +160,7 @@
      logged-in session handles auth, nothing is embedded here) so submitting
      a PR triggers the Actions workflow that runs scripts/render/atlas.js. -->
 <div id="make-atlas-panel">
+  <div id="page-estimate"></div>
   <button id="make-atlas">Make Atlas</button>
   <button id="download-json">Download JSON only</button>
 </div>
@@ -255,6 +263,23 @@ function renderGrid() {
   rowsValue.textContent = String(state.rows);
   colsValue.textContent = String(state.cols);
   orientationToggle.textContent = state.orientation;
+
+  renderEstimate();
+}
+
+// Rough estimate only — real per-page time varies with tile availability
+// (Cloudflare cache hit/miss, see ADR 0002) and isn't worth measuring live
+// just for this preview. ~3s/page and ~3s fixed overhead come from actual
+// render.js/atlas.js runs logged during development (ADR 0002/0006).
+const SECONDS_PER_PAGE = 3;
+const FIXED_OVERHEAD_SECONDS = 3;
+
+function renderEstimate() {
+  const totalPages = state.rows * state.cols + 1; // +1 for the overview page
+  const seconds = FIXED_OVERHEAD_SECONDS + totalPages * SECONDS_PER_PAGE;
+  const time = seconds < 60 ? `~${seconds}s` : `~${Math.round(seconds / 60)}min`;
+  document.getElementById("page-estimate").textContent =
+    `${totalPages} pages (incl. overview) · ${time} to render`;
 }
 
 document.getElementById("grid-panel").addEventListener("click", (e) => {
