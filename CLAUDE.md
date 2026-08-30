@@ -40,6 +40,11 @@ Headless Chromium + MapLibre GL JS の構成に切り替えました。
   これは技術的制約ではなく、意図的なスコープ設計です。
 - 上記の境界を越える機能追加の提案があった場合は、まず ADR を書いてスコープ変更の
   是非を明示的に検討してください。
+- **公開範囲**: `dwg7/zukaku` はpublicリポジトリで、`docs/`はGitHub Pagesがそのまま
+  配信する。`docs/requests/`(リクエストJSON)・`docs/responses/`(生成PDF)は
+  誰でも無期限に閲覧できる。Field Papersにはアトラスを非公開にする機能があったが、
+  zukakuでは意図的に実装しない([ADR 0006](adr/0006-github-actions-render-pipeline.md))。
+  非公開・アクセス制御が必要になったら、その時点で別途ADRを起こすこと。
 - **範囲指定UI**: Field Papers の「地図上でアトラスの範囲(bbox・用紙サイズ・縮尺)を
   指定するUI」を移植する方針。詳細設計はこれから(要ADR)。
 - **選択可能なスタイル(当面)**: [stars.optgeo.org](https://stars.optgeo.org)(hfu/stars)

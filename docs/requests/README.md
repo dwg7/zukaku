@@ -23,6 +23,16 @@ old requests are just skipped, not re-rendered. There's no operational need
 to clean this out regularly; do it whenever it's convenient, not on a
 schedule.
 
+**Everything here is public.** `dwg7/zukaku` is a public repository, and
+`docs/` is exactly what GitHub Pages serves — so every request JSON (the
+area, style, and grid you asked for) and every rendered PDF is visible to
+anyone, indefinitely, with no access control. Field Papers could keep
+atlases private; zukaku deliberately doesn't offer that. In practice this
+costs little, since the underlying map data (OpenStreetMap / GSI) was
+already open before you asked for it — but don't put anything here you'd
+mind being public (e.g. don't use place labels or filenames that reveal
+something sensitive about who's going where).
+
 The same file also works locally without GitHub Actions:
 
 ```bash
