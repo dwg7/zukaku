@@ -40,6 +40,21 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   Playwright/GitHub Actionsを一切使わず、`window.print()`+CSS named pages
   (`@page`のportrait/landscape混在)だけでPDF化する第三の選択肢。同じ
   `computePages()`を再利用し、印刷面の装飾もPlaywright版と同等。実機検証済み。
+  ユーザーからの評価を受け、ボタンを「Print」(青・主要)/「Share」(白・副次、
+  Make Atlas改め)/「JSON」(白・副次、Download JSON only改め)に整理し、
+  それぞれツールチップを追加(2026-08-31)。
+- **印刷面のレイアウトを再設計**([ADR 0005](adr/0005-range-selection-ui-interaction-model.md))。
+  タイトル/インデックスを図郭の外(上マージン)に移動、さらに上下左右すべて15mm
+  均一マージンにして、スケールバーも図郭の外(下マージン)へ移動。方位記号は廃止し、
+  地図の回転も禁止(回転すると概要ページのbbox算出が壊れる実バグの修正を兼ねる)。
+  Playwright/Actions経路(`scripts/render/page.html`)とPrint in Browser経路
+  (`docs/index.html`)の両方に同一のレイアウトを適用済み(2026-08-31)。
+- **Save Paper機能を追加**([ADR 0008](adr/0008-save-paper.md))。グリッドの各セル
+  中央のトグルボタンをクリックすると、そのセルを印刷対象から除外できる(海だけ・
+  山だけといった「調査対象が無いページ」を省くため)。グリッド参照は位置から機械的に
+  決まる設計のため、除外しても他セルの再番号付けは不要(単に欠番になる)。概要ページ
+  では除外セルの輪郭を残しつつ薄くグレー塗りし、ラベルだけ非表示にする。両レンダリング
+  経路に同一ロジックを実装し、実機検証済み(2026-08-31)。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -67,6 +82,16 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 - [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
   実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
   Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
+- **TODO: 国土地理院std(画像タイル)スタイルの追加**(2026-08-31、ユーザー要望、
+  Save Paper完了後に着手する前提で保留中)。左上のスタイル選択メニューに
+  `bvmap-dark`/`positron`に加え、国土地理院の「std」画像タイルを使うスタイルを
+  追加したい。注意点2つ: (1) stdは伝統的な256pxタイルであり、最近主流の512px
+  ではない。(2) まだ`std.json`(MapLibreスタイルJSON)が存在しないため、まず
+  zukaku側で`std.json`を作成し、それをstars(stars.optgeo.org、Martinベースの
+  スタイルライブラリを運用している別セッション/エージェント)に依頼して
+  Martinのスタイルライブラリに登録してもらう必要がある。登録後の
+  `stars.optgeo.org/style/std`エンドポイントを`docs/index.html`の`#style-panel`
+  (スタイル選択メニュー)から参照する形にする。
 
 ## 読むべき順序
 

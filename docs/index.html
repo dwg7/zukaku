@@ -133,8 +133,29 @@
     outline: 2px solid rgba(0, 0, 0, 0.6);
   }
   #grid-overlay .cell {
+    position: relative; /* positions .cell-toggle */
     border: 1px solid rgba(0, 0, 0, 0.6);
     box-sizing: border-box;
+  }
+  /* Save Paper (ADR 0008): grayed-out cell = omitted from printing. */
+  #grid-overlay .cell.excluded { background: rgba(0, 0, 0, 0.35); }
+  #grid-overlay .cell-toggle {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.5);
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+    color: #333;
+    cursor: pointer;
+    /* The one part of a cell that opts back into receiving clicks — the
+       rest of #grid-overlay stays pointer-events:none so drag-to-pan still
+       reaches the map underneath. */
+    pointer-events: auto;
   }
 
   #print-root { display: none; }
@@ -293,6 +314,11 @@ const state = {
   cols: 1,
   orientation: "portrait",
   title: "",
+  // Save Paper (ADR 0008): "r,c" keys of grid cells to omit from printing
+  // (e.g. a cell that's entirely open water). Cleared whenever rows/cols
+  // change, since a stored position may no longer exist or may now mean a
+  // different cell.
+  excludedCells: new Set(),
 };
 
 document.getElementById("title-input").addEventListener("input", (e) => {
@@ -375,11 +401,35 @@ function renderGrid() {
   gridOverlay.style.width = `${totalWidth * scale}px`;
   gridOverlay.style.height = `${totalHeight * scale}px`;
 
+  // Row-major order matches grid-template-columns/rows filling order, and
+  // must match computePages()'s (r, c) iteration so excludedCells keys agree.
   gridOverlay.innerHTML = "";
-  for (let i = 0; i < state.rows * state.cols; i++) {
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    gridOverlay.appendChild(cell);
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      const key = `${r},${c}`;
+      const excluded = state.excludedCells.has(key);
+
+      const cell = document.createElement("div");
+      cell.className = excluded ? "cell excluded" : "cell";
+      cell.dataset.row = String(r);
+      cell.dataset.col = String(c);
+
+      // Save Paper (ADR 0008): a small dedicated hotspot per cell, not the
+      // whole cell — the cell's own area still needs to pass drag/pan
+      // gestures through to the map underneath (#grid-overlay itself is
+      // pointer-events:none for exactly that reason), so only this button
+      // opts back into pointer-events.
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "cell-toggle";
+      toggle.textContent = excluded ? "+" : "×";
+      toggle.title = excluded
+        ? "このページを含める"
+        : "このページを印刷から省略する(save paper)";
+      cell.appendChild(toggle);
+
+      gridOverlay.appendChild(cell);
+    }
   }
 
   rowsValue.textContent = String(state.rows);
@@ -397,7 +447,10 @@ const SECONDS_PER_PAGE = 3;
 const FIXED_OVERHEAD_SECONDS = 3;
 
 function renderEstimate() {
-  const totalPages = state.rows * state.cols + 1; // +1 for the overview page
+  // Save Paper (ADR 0008): excluded cells don't get rendered, so they don't
+  // count toward the page total/time estimate either.
+  const detailCount = state.rows * state.cols - state.excludedCells.size;
+  const totalPages = detailCount + 1; // +1 for the overview page
   const seconds = FIXED_OVERHEAD_SECONDS + totalPages * SECONDS_PER_PAGE;
   const time = seconds < 60 ? `~${seconds}s` : `~${Math.round(seconds / 60)}min`;
   document.getElementById("page-estimate").textContent =
@@ -410,6 +463,7 @@ document.getElementById("grid-panel").addEventListener("click", (e) => {
     const key = stepBtn.dataset.adjust;
     const delta = Number(stepBtn.dataset.delta);
     state[key] = Math.min(10, Math.max(1, state[key] + delta));
+    state.excludedCells.clear(); // grid positions have shifted, stale otherwise
     renderGrid();
     return;
   }
@@ -420,6 +474,22 @@ document.getElementById("grid-panel").addEventListener("click", (e) => {
 });
 
 window.addEventListener("resize", renderGrid);
+
+// Save Paper (ADR 0008): toggle a single cell's excluded state. Delegated on
+// gridOverlay since cells are recreated by every renderGrid() call.
+gridOverlay.addEventListener("click", (e) => {
+  const btn = e.target.closest(".cell-toggle");
+  if (!btn) return;
+  const cell = btn.closest(".cell");
+  const key = `${cell.dataset.row},${cell.dataset.col}`;
+  if (state.excludedCells.has(key)) {
+    state.excludedCells.delete(key);
+  } else {
+    state.excludedCells.add(key);
+  }
+  renderGrid();
+});
+
 renderGrid();
 
 // --- Make Atlas (bottom-left) ---
@@ -436,8 +506,12 @@ function computePages() {
   // Page 1 is always an overview/index page (ADR 0005). Detail pages carry a
   // Field-Papers-style grid reference — row letter + column number (A1, A2,
   // B1, B2, ...) — rather than a running page number, matching the sample
-  // atlas the user shared (fieldpapers.org/atlases/4ibxrgcu).
+  // atlas the user shared (fieldpapers.org/atlases/4ibxrgcu). Because the
+  // reference comes straight from grid position, an excluded cell just
+  // leaves its letter/number unused (Save Paper, ADR 0008) — no renumbering
+  // needed.
   const detailPages = [];
+  const allCells = []; // every grid position, including excluded ones — for the overview's index drawing
   for (let r = 0; r < state.rows; r++) {
     for (let c = 0; c < state.cols; c++) {
       const left = rect.left + c * cellWidth;
@@ -445,9 +519,13 @@ function computePages() {
       const nw = map.unproject([left, top]);
       const se = map.unproject([left + cellWidth, top + cellHeight]);
       const gridRef = `${String.fromCharCode(65 + r)}${c + 1}`;
+      const bbox = [nw.lng, se.lat, se.lng, nw.lat]; // west, south, east, north
+      const excluded = state.excludedCells.has(`${r},${c}`);
+      allCells.push({ bbox, label: gridRef, excluded });
+      if (excluded) continue;
       detailPages.push({
         style: state.style,
-        bbox: [nw.lng, se.lat, se.lng, nw.lat], // west, south, east, north
+        bbox,
         orientation: state.orientation,
         ref: gridRef, // shown prominently, top-right (ADR 0005)
         title: state.title || undefined,
@@ -469,7 +547,7 @@ function computePages() {
     orientation: overviewOrientation,
     ref: "概要",
     title: state.title || undefined,
-    grid: detailPages.map((p) => ({ bbox: p.bbox, label: p.ref })),
+    grid: allCells, // includes excluded cells, grayed out on the overview (ADR 0008)
     // Breathing room around the grid block so it doesn't touch the print
     // frame (user feedback, 2026-08-30: portrait overview looked cramped).
     // Detail pages keep padding 0 to fill the page edge-to-edge.
@@ -631,7 +709,7 @@ function addOverviewGridLayers(pageMap, cells) {
     type: "FeatureCollection",
     features: cells.map((c) => ({
       type: "Feature",
-      properties: {},
+      properties: { excluded: !!c.excluded },
       geometry: {
         type: "Polygon",
         coordinates: [
@@ -646,18 +724,30 @@ function addOverviewGridLayers(pageMap, cells) {
       },
     })),
   };
+  // Save Paper (ADR 0008): an excluded cell keeps its outline on the
+  // overview (so the grid still reads as complete) but gets no reference
+  // label — a skipped index number, not a mistake.
   const points = {
     type: "FeatureCollection",
-    features: cells.map((c) => ({
-      type: "Feature",
-      properties: { label: c.label },
-      geometry: {
-        type: "Point",
-        coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
-      },
-    })),
+    features: cells
+      .filter((c) => !c.excluded)
+      .map((c) => ({
+        type: "Feature",
+        properties: { label: c.label },
+        geometry: {
+          type: "Point",
+          coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
+        },
+      })),
   };
   pageMap.addSource("zukaku-grid-lines", { type: "geojson", data: polygons });
+  pageMap.addLayer({
+    id: "zukaku-grid-excluded-fill",
+    type: "fill",
+    source: "zukaku-grid-lines",
+    filter: ["==", ["get", "excluded"], true],
+    paint: { "fill-color": "#000", "fill-opacity": 0.15 },
+  });
   pageMap.addLayer({
     id: "zukaku-grid-lines",
     type: "line",

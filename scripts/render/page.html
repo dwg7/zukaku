@@ -147,7 +147,7 @@
         type: "FeatureCollection",
         features: cells.map((c) => ({
           type: "Feature",
-          properties: {},
+          properties: { excluded: !!c.excluded },
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -162,21 +162,33 @@
           },
         })),
       };
+      // Save Paper (ADR 0008): an excluded cell keeps its outline on the
+      // overview (so the grid still reads as complete) but gets no
+      // reference label — a skipped index number, not a mistake.
       const points = {
         type: "FeatureCollection",
-        features: cells.map((c) => ({
-          type: "Feature",
-          properties: { label: c.label },
-          geometry: {
-            type: "Point",
-            coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
-          },
-        })),
+        features: cells
+          .filter((c) => !c.excluded)
+          .map((c) => ({
+            type: "Feature",
+            properties: { label: c.label },
+            geometry: {
+              type: "Point",
+              coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
+            },
+          })),
       };
       // Field Papers' own sample atlas (fieldpapers.org/atlases/4ibxrgcu) uses
       // plain thin black grid lines and black grid-reference labels, not a
       // bright accent color — matched here deliberately (ADR 0005).
       map.addSource("zukaku-grid-lines", { type: "geojson", data: polygons });
+      map.addLayer({
+        id: "zukaku-grid-excluded-fill",
+        type: "fill",
+        source: "zukaku-grid-lines",
+        filter: ["==", ["get", "excluded"], true],
+        paint: { "fill-color": "#000", "fill-opacity": 0.15 },
+      });
       map.addLayer({
         id: "zukaku-grid-lines",
         type: "line",
