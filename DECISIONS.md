@@ -113,3 +113,16 @@ Atlas」「Download JSON only」に加える第三の選択肢として`docs/ind
 両レンダリング経路に実装し、帯広3×3・2×3グリッドで実機検証済み(建物形状・
 道路ラベルが概要ページ全域に描かれることを確認)。
 → [adr/0009](adr/0009-overview-zoom-level-shift.md)
+
+## D10: 国土地理院「標準地図」(std)ラスタタイルをスタイル選択肢に追加
+
+画像タイルでどこまでできるか確認したい、というユーザーの要望を受け、GSIの
+「標準地図」(std、256px・z5〜18の伝統的なラスタタイル)を`bvmap-dark`/`positron`に
+並ぶ3つ目のスタイルとして追加した。stars.optgeo.orgにはまだstyle.jsonが無かった
+ため、zukaku側で`styles/std.json`を新規作成し、hfu/starsへPRを起票して登録して
+もらった([hfu/stars#6](https://github.com/hfu/stars/pull/6))。PRの起票元は
+コントリビューター(zukaku)側であるべきという、stars側からの指摘に沿って対応した。
+`docs/index.html`側の変更はスタイル選択ボタン1つの追加のみ(既存の汎用クリック
+ハンドラがそのまま効くため、JS分岐は増えていない)。実機検証済み——GSIタイルの
+オーバーズーム時の見え方(ラベルがビットマップ拡大される)も含めて確認した。
+→ [adr/0010](adr/0010-gsi-std-raster-style.md)

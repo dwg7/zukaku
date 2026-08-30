@@ -48,11 +48,14 @@ Headless Chromium + MapLibre GL JS の構成に切り替えました。
 - **範囲指定UI**: Field Papers の「地図上でアトラスの範囲(bbox・用紙サイズ・縮尺)を
   指定するUI」を移植する方針。詳細設計はこれから(要ADR)。
 - **選択可能なスタイル(当面)**: [stars.optgeo.org](https://stars.optgeo.org)(hfu/stars)
-  がホストするスタイルのうち `bvmap-dark` と `positron` の2つに限定してよい。
-  スタイル追加はstars側へのPR(hfu/starsのCONTRIBUTING.md参照)が必要になる想定。
+  がホストするスタイルのうち `bvmap-dark`・`positron`・`std` の3つに限定してよい。
+  スタイル追加はstars側へのPR(hfu/starsのCONTRIBUTING.md参照)が必要になる想定
+  (実際に[hfu/stars#6](https://github.com/hfu/stars/pull/6)でstdを追加した実績あり)。
   **`bvmap-dark`は国土地理院(GSI)の`optimal_bvmap`データに基づく日本国内専用**
   (実機確認済み、2026-08-30: ビエンチャンで表示すると完全に空白になる)。
   `positron`はグローバル(OSM planet)データで、日本国外にも対応。
+  **`std`は国土地理院の「標準地図」ラスタタイル(256px、z5〜18)で、こちらも日本国内
+  専用**([ADR 0010](adr/0010-gsi-std-raster-style.md)参照)。
 - **用紙サイズ(当面)**: A4のみ。ただし portrait/landscape の切り替えは必須。
 - **アトラスの規模(当面)**: 1アトラスあたり10ページ程度を前提にしてよい
   (大量並列処理や高度なキャッシュ戦略を先回りして作り込む必要はない)。

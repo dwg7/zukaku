@@ -11,8 +11,10 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   サーバーを持たず、stars.optgeo.orgのデータをHeadless Chromium(Playwright)+
   MapLibre GL JS v6で直接レンダリングしてPDF化する([ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md))。
 - 用紙はA4のみ(portrait/landscape切替必須)、当面10ページ程度の規模、選択可能スタイルは
-  `bvmap-dark`(日本国内専用)/`positron`(グローバル)の2つ。terrainは常に無効化、
-  fill-extrusion・globe投影は使わない([ADR 0004](adr/0004-terrain-and-fill-extrusion-policy.md))。
+  `bvmap-dark`(日本国内専用・ベクタ)/`positron`(グローバル・ベクタ)/`std`
+  (日本国内専用・ラスタ、[ADR 0010](adr/0010-gsi-std-raster-style.md))の3つ。
+  terrainは常に無効化、fill-extrusion・globe投影は使わない
+  ([ADR 0004](adr/0004-terrain-and-fill-extrusion-policy.md))。
 
 ### レンダリングパイプライン([scripts/render/](scripts/render/)、[Dockerfile](Dockerfile))
 
@@ -62,6 +64,12 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   縮尺は変わらない。範囲指定UIの対話的なライブ地図には適用しない(パフォーマンス
   維持のため、ユーザー指示)。両レンダリング経路(帯広3×3・2×3グリッド)で
   実機検証済み(2026-08-31)。
+- **国土地理院「標準地図」(std)ラスタタイルをスタイル選択肢に追加**
+  ([ADR 0010](adr/0010-gsi-std-raster-style.md))。`bvmap-dark`/`positron`に並ぶ
+  3つ目のスタイル。stars.optgeo.orgにまだstyle.jsonが無かったため、zukaku側で
+  `styles/std.json`を新規作成しhfu/starsにPRを起票([hfu/stars#6](https://github.com/hfu/stars/pull/6)、
+  マージ・Martin再起動・本番反映済み)。`docs/index.html`側の変更はスタイル選択
+  ボタン1つの追加のみ。実機検証済み(2026-08-31)。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -89,16 +97,6 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 - [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
   実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
   Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
-- **TODO: 国土地理院std(画像タイル)スタイルの追加**(2026-08-31、ユーザー要望、
-  Save Paper完了後に着手する前提で保留中)。左上のスタイル選択メニューに
-  `bvmap-dark`/`positron`に加え、国土地理院の「std」画像タイルを使うスタイルを
-  追加したい。注意点2つ: (1) stdは伝統的な256pxタイルであり、最近主流の512px
-  ではない。(2) まだ`std.json`(MapLibreスタイルJSON)が存在しないため、まず
-  zukaku側で`std.json`を作成し、それをstars(stars.optgeo.org、Martinベースの
-  スタイルライブラリを運用している別セッション/エージェント)に依頼して
-  Martinのスタイルライブラリに登録してもらう必要がある。登録後の
-  `stars.optgeo.org/style/std`エンドポイントを`docs/index.html`の`#style-panel`
-  (スタイル選択メニュー)から参照する形にする。
 
 ## 読むべき順序
 
