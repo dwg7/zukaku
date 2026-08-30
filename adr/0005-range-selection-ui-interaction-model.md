@@ -169,6 +169,34 @@ atlas-pages.json --out atlas.pdf`に渡したところ、4ページとも隙間�
 3点とも[scripts/render/page.html](../scripts/render/page.html)に実装し、帯広の
 サンプルで目視確認済み。
 
+### レイアウト再設計: タイトル/インデックスを図郭の外に(2026-08-31)
+
+Print in Browserモード([ADR 0007](0007-client-side-print-mode.md))を試したユーザーから、
+「クオリティを上げたい」というフィードバックとともに具体的な指示があった: タイトルと
+グリッド参照(インデックス)を、地図の上に重ねる半透明ラベルとしてではなく、**図郭
+(neatline)の外側、上マージンの中に追い出す**。フォントは小さめに、左に
+「Zukaku: {title}」、右にインデックス。上マージンはそのぶん広げてよく、左右マージンも
+(ホッチキス留めの余地も兼ねて)バランスを見て広げてよい。**この調整はPlaywright/
+Actions経路とPrint in Browser経路の両方に平等に適用すること**、との指示だった。
+
+対応した新しいマージン設計(両モード共通、`scripts/render/page.html`の`#map`/`#header`と
+`docs/index.html`の`.print-map`/`.print-header`で同じ数値を使う):
+
+- 上: 18mm(タイトル/インデックスの帯を収める分、拡大)
+- 左右: 12mm(バランス+ホッチキス留めの余地、拡大)
+- 下: 8mm(変更なし、スケールバー/方位記号はここに収まる)
+
+タイトル(左)とインデックス(右)は、この上マージンの帯の中に`display:flex;
+justify-content:space-between`で配置し、フォントサイズも8mm/6mmから5mmに縮小した
+(半透明の背景ボックスも不要になった、白紙の上に直接乗るため)。
+
+`docs/index.html`側は、これまで`@page`の`margin`ショートハンドで余白を作っていたが、
+`scripts/render/page.html`と実装方法を完全に揃えるため`margin:0`に変更し、CSSでの
+絶対配置(`.print-map`/`.print-header`)で余白を作る方式に統一した。これにより
+両モードの見た目が完全に一致する。
+
+両モードで実機確認済み(Playwright経由でPDF化して目視確認)。
+
 続けて、空いた左上に**プロダクト名「Zukaku」のワードマーク**を追加した(Field Papers
 本家が同じ位置に手書き風ロゴを置いているのに倣った、シンプルなテキストのみ)。
 

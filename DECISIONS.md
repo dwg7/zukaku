@@ -55,7 +55,10 @@ UXだと判明した(「Pin grid to map」で地理座標固定に切り替え�
 Field Papers本家にならったタイトル入力機能(`docs/index.html`の`#title-input`)も
 実装し、PDF左上のブランドラベルに「Zukaku: {title}」として焼き込む(入力欄自体は
 別ページのため焼き込まれない)。概要ページはグリッド周りに余白(`padding: 50`)を
-追加し、詳細ページはページいっぱいのまま。
+追加し、詳細ページはページいっぱいのまま。2026-08-31、タイトル/インデックスを図郭の
+外(上マージン)に移動する再設計を実施(上18mm・左右12mm・下8mmに拡大、フォントも
+縮小)。Playwright/Actions経路とPrint in Browser経路([adr/0007](adr/0007-client-side-print-mode.md))の
+両方に同じ数値・同じ構造を適用し、見た目を完全に一致させた。
 → [adr/0005](adr/0005-range-selection-ui-interaction-model.md)
 
 ## D6: レンダリングはGitHub Actions、起票はGitHubの「新規ファイル」URLトリック

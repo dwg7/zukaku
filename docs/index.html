@@ -139,9 +139,13 @@
      one print job mix portrait and landscape pages — verified working via
      Playwright's page.pdf({preferCSSPageSize:true}) before building this
      (that flag makes Playwright honor these same @page rules instead of a
-     fixed size, so it's a faithful stand-in for a real "Save as PDF"). */
-  @page print-portrait { size: 210mm 297mm; margin: 8mm; }
-  @page print-landscape { size: 297mm 210mm; margin: 8mm; }
+     fixed size, so it's a faithful stand-in for a real "Save as PDF").
+     margin:0 here — all spacing is handled by .print-map/.print-header below
+     instead, so this stays in lockstep with scripts/render/page.html (which
+     also does its own layout rather than relying on a print engine's page
+     margin box). */
+  @page print-portrait { size: 210mm 297mm; margin: 0; }
+  @page print-landscape { size: 297mm 210mm; margin: 0; }
 
   @media print {
     body > *:not(#print-root) { display: none !important; }
@@ -149,31 +153,43 @@
     .print-page {
       position: relative;
       box-sizing: border-box;
-      border: 0.75pt solid #000; /* neatline, matches scripts/render/page.html */
       break-after: page;
+    }
+    .print-page.portrait { page: print-portrait; width: 210mm; height: 297mm; }
+    .print-page.landscape { page: print-landscape; width: 297mm; height: 210mm; }
+
+    /* Print margins (2026-08-31 redesign): title/index live in a header band
+       above the neatline, never overlapping map content. Top is taller than
+       the other three sides to fit that band; left/right are a little wider
+       than bottom, doubling as stapling allowance. Numbers must match
+       scripts/render/page.html's #map/#header. */
+    .print-page .print-map {
+      position: absolute;
+      top: 18mm; left: 12mm; right: 12mm; bottom: 8mm;
+      box-sizing: border-box;
+      border: 0.75pt solid #000; /* neatline */
       overflow: hidden;
     }
-    .print-page.portrait { page: print-portrait; width: 194mm; height: 281mm; }
-    .print-page.landscape { page: print-landscape; width: 281mm; height: 194mm; }
-    .print-page img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
-    .print-page .print-controls {
-      position: absolute; inset: 0; pointer-events: none;
-    }
+    .print-page .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+    .print-page .print-controls { position: absolute; inset: 0; pointer-events: none; }
     /* MapLibre's own control DOM (ScaleControl/NavigationControl), cloned in
        as static markup per page — see preparePrintPages(). Re-anchor it to
-       the page corners since its normal positioning depends on a live map
+       the map corners since its normal positioning depends on a live map
        container that no longer exists once printed. */
     .print-page .maplibregl-ctrl-bottom-left { position: absolute; left: 10mm; bottom: 10mm; }
     .print-page .maplibregl-ctrl-bottom-right { position: absolute; right: 10mm; bottom: 10mm; }
-    .print-page .print-brand {
-      position: absolute; top: 10mm; left: 10mm; z-index: 1;
-      font: bold 6mm/1 sans-serif; color: #222;
+
+    .print-page .print-header {
+      position: absolute;
+      top: 0; left: 12mm; right: 12mm; height: 18mm;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .print-page .print-ref {
-      position: absolute; top: 10mm; right: 10mm; z-index: 1;
-      background: rgba(255, 255, 255, 0.85); padding: 3mm 5mm; border-radius: 1mm;
-      font: bold 8mm/1 sans-serif;
+    .print-page .print-brand, .print-page .print-ref {
+      font: bold 5mm/1 sans-serif; color: #222;
     }
+    .print-page .print-ref { text-align: right; }
   }
 </style>
 </head>
@@ -549,26 +565,33 @@ async function preparePrintPages(pages) {
     const section = document.createElement("section");
     section.className = `print-page ${orientation}`;
 
-    const img = document.createElement("img");
-    img.src = dataUrl;
-    section.appendChild(img);
-
-    const controls = document.createElement("div");
-    controls.className = "print-controls";
-    controls.innerHTML = controlsHTML;
-    section.appendChild(controls);
-
+    // Header band (above the neatline): title left, grid reference right —
+    // matches scripts/render/page.html's #header.
+    const header = document.createElement("div");
+    header.className = "print-header";
     const brand = document.createElement("div");
     brand.className = "print-brand";
     brand.textContent = spec.title ? `Zukaku: ${spec.title}` : "Zukaku";
-    section.appendChild(brand);
-
+    header.appendChild(brand);
     if (spec.ref) {
       const ref = document.createElement("div");
       ref.className = "print-ref";
       ref.textContent = spec.ref;
-      section.appendChild(ref);
+      header.appendChild(ref);
     }
+    section.appendChild(header);
+
+    // Map box (neatline + snapshot + scale bar/compass).
+    const mapBox = document.createElement("div");
+    mapBox.className = "print-map";
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    mapBox.appendChild(img);
+    const controls = document.createElement("div");
+    controls.className = "print-controls";
+    controls.innerHTML = controlsHTML;
+    mapBox.appendChild(controls);
+    section.appendChild(mapBox);
 
     printRoot.appendChild(section);
   }

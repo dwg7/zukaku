@@ -6,45 +6,39 @@
 <link rel="stylesheet" href="../../node_modules/maplibre-gl/dist/maplibre-gl.css">
 <style>
   html, body { margin: 0; padding: 0; background: #fff; }
-  /* Print margin (ADR 0005): every page reserves an 8mm blank border on all
-     four sides — printers generally can't print to the true paper edge, and
-     it keeps content off a physical trim/hole-punch line. The map fills
-     exactly what's left. */
+  /* Print margins (2026-08-31 redesign): title/index moved out of the map
+     area entirely, into a header band above the neatline, so they never sit
+     on top of map content. Top is taller than the other three sides to fit
+     that band; left/right are a little wider than bottom, doubling as
+     stapling allowance. Must stay in sync with docs/index.html's print CSS
+     (same numbers, ADR 0007 — this layout applies to both render paths). */
   #map {
     position: absolute;
-    top: 8mm; left: 8mm; right: 8mm; bottom: 8mm;
+    top: 18mm; left: 12mm; right: 12mm; bottom: 8mm;
     box-sizing: border-box;
     /* Neatline: marks exactly where the map frame ends, so the printed page
        reads unambiguously even if trimmed slightly off-square. */
     border: 0.75pt solid #000;
   }
-  /* Placeholder page decoration for verification only; the real print-frame
-     layout (north arrow, page index styling, etc.) is a separate design
-     decision (ADR 0005) not yet made. */
-  #label {
+  /* Header band (top margin): title left, grid reference right. Both sit
+     above the neatline, never overlapping the map. */
+  #header {
     position: absolute;
-    z-index: 10;
-    background: rgba(255, 255, 255, 0.85);
-    padding: 3mm 5mm;
-    font: bold 8mm/1 sans-serif;
-    border-radius: 1mm;
-    top: 10mm; right: 10mm; text-align: right; /* grid ref (A1, B2, ...) or "概要" */
+    top: 0; left: 12mm; right: 12mm; height: 18mm;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
-  /* Product wordmark, top-left — Field Papers' own atlases carry a "Field
-     Papers" logo in the same corner (ADR 0005). */
-  #brand {
-    position: absolute;
-    z-index: 10;
-    top: 10mm; left: 10mm;
-    font: bold 6mm/1 sans-serif;
-    color: #222;
-  }
+  #brand, #label { font: bold 5mm/1 sans-serif; color: #222; }
+  #label { text-align: right; } /* grid ref (A1, B2, ...) or "概要" */
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div id="label"></div>
-<div id="brand"></div>
+<div id="header">
+  <div id="brand"></div>
+  <div id="label"></div>
+</div>
 <script type="module">
   // maplibre-gl v6 ships ESM-only (dist/maplibre-gl.mjs); there is no more
   // UMD bundle that attaches a global `maplibregl`.
