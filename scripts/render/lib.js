@@ -88,7 +88,6 @@ export async function renderPage(browser, port, spec) {
   }
   if (spec.bearing) qs.set("bearing", String(spec.bearing));
   if (spec.pitch) qs.set("pitch", String(spec.pitch));
-  if (spec.label) qs.set("label", spec.label);
   if (spec.ref) qs.set("ref", spec.ref);
   if (spec.grid) qs.set("grid", JSON.stringify(spec.grid));
   if (spec.title) qs.set("title", spec.title);

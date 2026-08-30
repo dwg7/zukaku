@@ -339,7 +339,6 @@ function computePages() {
   const rect = gridOverlay.getBoundingClientRect();
   const cellWidth = rect.width / state.cols;
   const cellHeight = rect.height / state.rows;
-  const cityLabel = CITIES[state.city].label;
 
   // Page 1 is always an overview/index page (ADR 0005). Detail pages carry a
   // Field-Papers-style grid reference — row letter + column number (A1, A2,
@@ -357,7 +356,6 @@ function computePages() {
         style: state.style,
         bbox: [nw.lng, se.lat, se.lng, nw.lat], // west, south, east, north
         orientation: state.orientation,
-        label: cityLabel,
         ref: gridRef, // shown prominently, top-right (ADR 0005)
         title: state.title || undefined,
       });
@@ -376,7 +374,6 @@ function computePages() {
     style: state.style,
     bbox: [overallNW.lng, overallSE.lat, overallSE.lng, overallNW.lat],
     orientation: overviewOrientation,
-    label: cityLabel,
     ref: "概要",
     title: state.title || undefined,
     grid: detailPages.map((p) => ({ bbox: p.bbox, label: p.ref })),
