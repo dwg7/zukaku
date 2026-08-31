@@ -156,3 +156,17 @@ Mac側は生成PDFのページサイズ・見た目が完全に不変(回帰な�
 全ページが単一の物理サイズになることを確認した。実際にWindows上で不具合が
 解消するかはユーザーの実機再確認待ち。
 → [adr/0007](adr/0007-client-side-print-mode.md)の追記セクション参照
+
+## D13: 地図の状態をdocument fragmentで表現し、URLで共有可能にする
+
+範囲指定UIで選んだ状態(地図の位置・ズーム、行列数、向き、タイトル、
+スタイル、Save Paperで除外したセル)をURLのコピペで再現できるようにした
+([dwg7/zukaku#3](https://github.com/dwg7/zukaku/issues/3))。MapLibre GL JSの
+`hash: "map"`オプション(自分が担当する`map=...`キー以外のhashエントリには
+一切手を出さない設計)を使い、地図自身の位置・ズームはMapLibreに任せつつ、
+`m`・`n`・`o`・`style`・`title`・`excluded`というzukaku独自のフィールドを
+同じ`location.hash`に同居させる(`readHashParams`/`writeHashParams`/
+`syncHashFromState`/`restoreStateFromHash`)。Playwrightで往復テスト
+(状態を作る→hashを取得→そのURLに再アクセス→状態が完全に復元されることを確認)
+を実施済み。
+→ [adr/0011](adr/0011-shareable-state-via-document-fragment.md)

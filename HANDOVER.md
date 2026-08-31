@@ -84,6 +84,12 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
     での動作は完全不変)、Windowsのみ単一`@page`+`transform:rotate(90deg)`方式に
     切り替えてOS印刷ドライバの向き切替バグを回避。
     [ADR 0007追記](adr/0007-client-side-print-mode.md#追記2026-08-31-windows-edgechromeでの印刷レイアウト崩れと対応)参照。
+- **地図の状態をURLで共有可能に**([ADR 0011](adr/0011-shareable-state-via-document-fragment.md)、
+  [issue #3](https://github.com/dwg7/zukaku/issues/3))。MapLibreの`hash:"map"`
+  (地図の位置・ズーム)に、zukaku独自のフィールド(行列数・向き・スタイル・
+  タイトル・Save Paperの除外セル)を同じ`location.hash`に同居させる形で追加。
+  Playwrightで往復テスト(状態作成→hash取得→再アクセスで復元)を実施し、
+  すべてのフィールドが正しく復元されることを確認済み。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -116,11 +122,6 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
   (2026-08-31)。どちらもPlaywrightでは再現できなかった不具合のため、暫定対応は
   Playwrightでの回帰確認のみで実機未確認。issue #4はmacOS Braveでの概要ページ
   再印刷、issue #2はWindows Edge/Chromeでの印刷レイアウト再確認が必要。
-- **未着手: [issue #3](https://github.com/dwg7/zukaku/issues/3)**(地図の状態を
-  document fragmentで表現する)。issue #4・#2(印刷パイプラインのバグ)を優先した
-  ため保留中。`docs/index.html`のMapLibreインスタンスに`hash:"map"`を追加し、
-  `m`/`n`/`title`/`style`/除外セルを同じfragmentの`map=...`部分より後ろに
-  追記する設計(詳細は計画済み、未実装)。
 
 ## 読むべき順序
 

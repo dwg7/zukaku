@@ -351,6 +351,8 @@ function viewportPxFor(orientation) {
   return orientation === "landscape" ? { width: 1123, height: 794 } : { width: 794, height: 1123 };
 }
 
+const STYLE_IDS = ["bvmap-dark", "positron", "std"];
+
 const state = {
   style: "positron",
   city: "obihiro",
@@ -365,8 +367,70 @@ const state = {
   excludedCells: new Set(),
 };
 
-document.getElementById("title-input").addEventListener("input", (e) => {
+// --- Shareable state via the document fragment (issue #3, 2026-08-31) ---
+// The map's own center/zoom/bearing/pitch are handled entirely by
+// MapLibre's own `hash: "map"` option below (constructor option, applied
+// automatically both on load and on every move) — it namespaces its
+// portion of location.hash as `map=...` and, by design, preserves any
+// other `key=value` pairs already there. These two functions manage only
+// *our* fields (m/n/o/style/title/excluded) the same way, leaving
+// MapLibre's own `map=...` entry untouched.
+function readHashParams() {
+  const raw = location.hash.replace(/^#/, "");
+  const params = new URLSearchParams();
+  for (const part of raw.split("&")) {
+    if (!part || part.startsWith("map=")) continue; // MapLibre's own entry
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    params.set(decodeURIComponent(part.slice(0, eq)), decodeURIComponent(part.slice(eq + 1)));
+  }
+  return params;
+}
+
+function writeHashParams(params) {
+  const raw = location.hash.replace(/^#/, "");
+  const mapPart = raw.split("&").find((p) => p.startsWith("map="));
+  const rest = [...params.entries()].map(
+    ([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
+  );
+  const parts = mapPart ? [mapPart, ...rest] : rest;
+  location.hash = parts.join("&");
+}
+
+function syncHashFromState() {
+  const params = new URLSearchParams();
+  params.set("m", String(state.rows));
+  params.set("n", String(state.cols));
+  params.set("o", state.orientation === "landscape" ? "l" : "p");
+  params.set("style", state.style);
+  if (state.title) params.set("title", state.title);
+  if (state.excludedCells.size) params.set("excluded", Array.from(state.excludedCells).join(","));
+  writeHashParams(params);
+}
+
+// Applied once at load, before the map/UI are constructed, so their own
+// initial values (style, rows/cols, title) come from a shared URL when one
+// is present — restoreStateFromHash() only ever narrows/overwrites `state`,
+// never triggers a hash write itself (that would fight with MapLibre's own
+// hash restoration during construction).
+function restoreStateFromHash() {
+  const params = readHashParams();
+  if (params.has("m")) state.rows = Math.min(10, Math.max(1, Number(params.get("m")) || state.rows));
+  if (params.has("n")) state.cols = Math.min(10, Math.max(1, Number(params.get("n")) || state.cols));
+  if (params.has("o")) state.orientation = params.get("o") === "l" ? "landscape" : "portrait";
+  if (params.has("style") && STYLE_IDS.includes(params.get("style"))) state.style = params.get("style");
+  if (params.has("title")) state.title = params.get("title").slice(0, 60);
+  if (params.has("excluded")) {
+    state.excludedCells = new Set(params.get("excluded").split(",").filter(Boolean));
+  }
+}
+restoreStateFromHash();
+
+const titleInput = document.getElementById("title-input");
+titleInput.value = state.title;
+titleInput.addEventListener("input", (e) => {
   state.title = e.target.value.trim();
+  syncHashFromState();
 });
 
 const map = new MapLibreMap({
@@ -374,6 +438,12 @@ const map = new MapLibreMap({
   style: `${STARS}/${state.style}`,
   center: CITIES[state.city].center,
   zoom: CITIES[state.city].zoom,
+  // Shareable state (issue #3, 2026-08-31): namespaced so our own fields
+  // (added by syncHashFromState()/restoreStateFromHash() above) can share
+  // the same location.hash — see the comment there. When a `map=...` entry
+  // is already present in the hash (i.e. this is a shared/reloaded URL),
+  // MapLibre uses it instead of the center/zoom given here.
+  hash: "map",
   // ADR 0004: no 3D. Same reasoning as the headless renderer (page.html).
   projection: "mercator",
   // Rotation locked (2026-08-31 bug fix): computePages() builds each page's
@@ -404,7 +474,14 @@ stylePanel.addEventListener("click", (e) => {
   }
   map.setStyle(`${STARS}/${state.style}`);
   map.once("style.load", () => map.setTerrain(null));
+  syncHashFromState();
 });
+// Reflect a style restored from the hash (restoreStateFromHash(), above) —
+// the map constructor already picked it up for its initial `style` option,
+// this just brings the button highlight in sync with it.
+for (const b of stylePanel.querySelectorAll("button[data-style]")) {
+  b.setAttribute("aria-pressed", String(b.dataset.style === state.style));
+}
 
 // --- City selector (top-right) ---
 const cityPanel = document.getElementById("city-panel");
@@ -509,11 +586,13 @@ document.getElementById("grid-panel").addEventListener("click", (e) => {
     state[key] = Math.min(10, Math.max(1, state[key] + delta));
     state.excludedCells.clear(); // grid positions have shifted, stale otherwise
     renderGrid();
+    syncHashFromState();
     return;
   }
   if (e.target === orientationToggle) {
     state.orientation = state.orientation === "portrait" ? "landscape" : "portrait";
     renderGrid();
+    syncHashFromState();
   }
 });
 
@@ -532,9 +611,15 @@ gridOverlay.addEventListener("click", (e) => {
     state.excludedCells.add(key);
   }
   renderGrid();
+  syncHashFromState();
 });
 
 renderGrid();
+// Write the (possibly hash-restored) initial state back out, so a freshly
+// loaded page with no prior hash immediately has one — matching what the
+// hash would look like after any UI interaction, rather than only
+// appearing once the user first touches a control.
+syncHashFromState();
 
 // --- Make Atlas (bottom-left) ---
 // Per-cell bbox is computed with the live map's own map.unproject(), the same
