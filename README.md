@@ -20,12 +20,22 @@ reference.
 
 1. Open the range picker: **https://dwg7.github.io/zukaku/**
 2. Pick a style, a city, and a grid size; pan/zoom the map underneath the
-   fixed grid to line it up.
-3. Click **Make Atlas** — it opens a pre-filled GitHub "create file" page.
-   Commit it (as a PR if you don't have push access) to
-   `docs/requests/`, and [the workflow](.github/workflows/atlas.yml) renders
-   a matching PDF into `docs/responses/`, reachable at
-   `https://dwg7.github.io/zukaku/responses/<name>.pdf`.
+   fixed grid to line it up. Click a cell's center toggle to skip printing
+   it (Save Paper) — e.g. a cell that's entirely open water.
+3. Three ways to turn that into a PDF:
+   - **Print** (mainstream, recommended): renders everything right in the
+     tab and opens your browser's own print dialog — no GitHub account,
+     nothing leaves the page. Chromium-based browsers (Chrome, Edge, Brave)
+     work best.
+   - **Share**: opens a pre-filled GitHub "create file" page. Commit it (as
+     a PR if you don't have push access) to `docs/requests/`, and
+     [the workflow](.github/workflows/atlas.yml) renders a matching PDF into
+     `docs/responses/`, reachable at
+     `https://dwg7.github.io/zukaku/responses/<name>.pdf`.
+   - **JSON**: downloads the page spec for local/Docker rendering.
+
+The current state (style, grid size, orientation, title, excluded cells) is
+reflected in the URL, so you can copy/paste it to share or resume later.
 
 Or run it locally:
 

@@ -178,3 +178,11 @@ dwg7組織の他プロジェクト(kaga0など)にならい、以下の4ファ�
   アカウントも不要な第三の選択肢として、既存パスと並存させる。
 - GitHub Pagesは公開中: https://dwg7.github.io/zukaku/。unopengis/7への案内issueも
   投稿済み([UNopenGIS/7#989](https://github.com/UNopenGIS/7/issues/989))。
+- 2026-08-31、実機フィードバックを受けて機能追加・修正を継続中: Save Paper
+  ([ADR 0008](adr/0008-save-paper.md))、概要ページのズームレベルシフト
+  ([ADR 0009](adr/0009-overview-zoom-level-shift.md))、GSI stdラスタスタイル追加
+  ([ADR 0010](adr/0010-gsi-std-raster-style.md))、地図状態のURL共有
+  ([ADR 0011](adr/0011-shareable-state-via-document-fragment.md))、および実機報告
+  2件([dwg7/zukaku#4](https://github.com/dwg7/zukaku/issues/4)・
+  [#2](https://github.com/dwg7/zukaku/issues/2))への暫定対応(実機再確認待ち)。
+  詳細は[HANDOVER.md](HANDOVER.md)参照。

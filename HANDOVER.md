@@ -2,7 +2,7 @@
 
 zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)向け。
 
-## 現状(2026-08-30時点) — MVPは実際にデプロイ・動作確認済み
+## 現状(2026-08-31時点) — MVPは実際にデプロイ・動作確認済み
 
 調査・設計から実装、そして**実際のGitHub上へのデプロイ・動作確認まで完了**。
 ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
@@ -119,9 +119,13 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
   Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
 - **要ユーザー確認: [issue #4](https://github.com/dwg7/zukaku/issues/4)・
   [issue #2](https://github.com/dwg7/zukaku/issues/2)への対応が実際に効いているか**
-  (2026-08-31)。どちらもPlaywrightでは再現できなかった不具合のため、暫定対応は
-  Playwrightでの回帰確認のみで実機未確認。issue #4はmacOS Braveでの概要ページ
-  再印刷、issue #2はWindows Edge/Chromeでの印刷レイアウト再確認が必要。
+  (2026-08-31、ユーザーは2026-09-01に実機確認予定と表明済み)。どちらも
+  Playwrightでは再現できなかった不具合のため、暫定対応はPlaywrightでの回帰確認
+  のみで実機未確認。issue #4はmacOS Braveでの概要ページ再印刷、issue #2は
+  Windows Edge/Chromeでの印刷レイアウト再確認が必要。直っていなければ、
+  issue #4は次善策(scale barもcanvasスナップショットに焼き込む)、issue #2は
+  ブラウザ判定での警告表示や「Share」への誘導を検討する
+  (いずれもADR 0009/0007の追記セクションに記載済み)。
 
 ## 読むべき順序
 
