@@ -87,6 +87,57 @@ Playwrightで両経路を実機検証:
 いずれもレンダリング時間・PDFサイズの増加はあるが、「当面10ページ程度」という
 プロジェクトの想定規模(CLAUDE.md 3節)では実用上問題ない範囲と判断。
 
+## 追記(2026-08-31): 概要ページのスケールバーが乱れる不具合と暫定対応
+
+実機(macOS Brave)で本機能を使ったユーザーから、**概要ページ(p.1)のスケールバー
+だけ表示が乱れる**という報告があった([dwg7/zukaku#4](https://github.com/dwg7/zukaku/issues/4))。
+詳細ページ(p.2以降)は問題ない。
+
+### 調査
+
+issueに添付されたスクリーンショットを高倍率(LANCZOS)でクロップし、スケールバー
+周辺のピクセル値を直接サンプリングしたところ、文字のエッジに純粋な白黒ではない
+**オレンジ/青のRGBフリンジ(色収差)**が確認できた。LCDサブピクセルantialiasingされた
+テキストが、後段で再スケール・再合成された際によく起きる典型的なアーティファクト。
+
+同じグリッド構成をPlaywright経由(`page.pdf({preferCSSPageSize:true})`)で
+再現しようとしたが、`scripts/render/page.html`・`docs/index.html`の両経路とも
+**再現しなかった**(スケールバーはクリーンに描画された)。これは矛盾ではなく
+手がかりだった: Playwrightの`page.pdf()`(CDP経由)と、実際のブラウザの「印刷 →
+PDFとして保存」は別の内部コードパスであることが分かっている
+(参考: [Chrome "Print to PDF" and headless --print-to-pdf aren't the
+same!](https://andre.arko.net/2025/05/25/chrome-headless-print-to-pdf/))。
+自分のPlaywright検証では、ユーザーが実際に踏んだ経路を再現できていなかった、
+ということになる。
+
+詳細ページも同じ`.maplibregl-ctrl-scale`のDOM/CSS機構を使っているのに問題が
+出ない、という点が重要な手がかりだった: p.1だけの違いは、本ADRで追加した
+「`renderScale`倍だけ大きい、`position:absolute; left:-99999px`(page.html)/
+`position:fixed; left:-9999px`(docs/index.html)のオフスクリーンコンテナ内で
+MapLibreインスタンスを構築し、そこからscale barのDOM要素を移動する」という処理。
+この「極端に画面外に配置された(巨大な)コンテナ内で生成された要素を後から移動する」
+構造が、実ブラウザの印刷パイプラインでの合成(compositing)に影響していると推測した。
+
+### 暫定対応
+
+断定的な原因確定より先に、低リスクな変更を1つ実施した: オフスクリーン
+ステージのCSSを、`left: -99999px`のような極端な負のオフセットから、
+`position: fixed; top:0; left:0; opacity:0; pointer-events:none;`という、
+「原点付近だが不可視」という一般的な手法に変更した(`scripts/render/page.html`・
+`docs/index.html`のどちらのステージ生成箇所も対称的に変更、後者は概要ページに
+限らず全ページのステージングで共通して使われているため、副作用がないよう
+統一して適用した)。キャンバスのレンダリング結果そのもの(bbox・zoom・padding)
+には影響しない変更。
+
+Playwrightでは実ブラウザの印刷パイプラインの挙動を完全には再現できないため、
+この変更が実際に直っているかはPlaywrightでは確認できない(回帰(レイアウト崩れ)
+がないことのみ確認済み)。**ユーザーによる実機(macOS Brave)での再確認が必要**。
+
+直らなかった場合の次善策(未実装): scale barをDOM/CSSのまま扱うのをやめ、
+p.1についてもdetailページと同様に**canvasスナップショットに焼き込む**
+(現状、地図本体は`canvas.toDataURL()`で画像化しているが、scale barだけ生DOMの
+まま扱っている非対称性がそもそもの脆弱性の元になっている可能性があるため)。
+
 ## トレードオフ・既知の制約
 
 - 概要ページのレンダリング時間・出力PDFサイズが、グリッドの行数×列数に比例して

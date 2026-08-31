@@ -640,10 +640,17 @@ async function preparePrintPages(pages) {
     }
 
     // Offscreen staging container: MapLibre needs a real laid-out element to
-    // size its canvas against, so this can't be display:none. Moved far off
-    // screen instead, and removed as soon as this page's snapshot is taken.
+    // size its canvas against, so this can't be display:none. Hidden via
+    // opacity + pointer-events rather than parked at a large negative
+    // offset (issue #4, 2026-08-31) — a real browser's print pipeline (as
+    // opposed to Playwright's page.pdf(), a different code path — see
+    // ADR 0009) produced RGB-fringed, garbled scale-bar text specifically
+    // for the overview page, whose staging container is the one that gets
+    // dramatically larger (renderScale). Keeping every staging container
+    // near the normal document flow removes that variable regardless of
+    // size. Removed as soon as this page's snapshot is taken.
     const stage = document.createElement("div");
-    stage.style.cssText = `position:fixed; left:-9999px; top:0; width:${pxSize.width}px; height:${pxSize.height}px;`;
+    stage.style.cssText = `position:fixed; top:0; left:0; opacity:0; pointer-events:none; width:${pxSize.width}px; height:${pxSize.height}px;`;
     document.body.appendChild(stage);
 
     const pageMap = new MapLibreMap({

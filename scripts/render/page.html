@@ -104,7 +104,15 @@
   if (renderScale && (renderScale.x > 1 || renderScale.y > 1)) {
     const frameRect = frameEl.getBoundingClientRect();
     offscreenStage = document.createElement("div");
-    offscreenStage.style.cssText = `position:absolute; left:-99999px; top:0; width:${
+    // Hidden via opacity + pointer-events, not parked at an extreme negative
+    // offset (issue #4, 2026-08-31): a real browser's print pipeline
+    // (as opposed to Playwright's page.pdf(), which goes through a
+    // different code path — see ADR 0009) produced RGB-fringed, garbled
+    // text specifically for content sourced from this container, and
+    // "position way off-screen" is the one thing distinguishing it from an
+    // ordinary on-page element. Keeping it near the normal document flow
+    // avoids whatever compositing/rasterization edge case that triggered.
+    offscreenStage.style.cssText = `position:fixed; top:0; left:0; opacity:0; pointer-events:none; width:${
       frameRect.width * renderScale.x
     }px; height:${frameRect.height * renderScale.y}px;`;
     document.body.appendChild(offscreenStage);
