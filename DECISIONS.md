@@ -126,3 +126,33 @@ Atlas」「Download JSON only」に加える第三の選択肢として`docs/ind
 ハンドラがそのまま効くため、JS分岐は増えていない)。実機検証済み——GSIタイルの
 オーバーズーム時の見え方(ラベルがビットマップ拡大される)も含めて確認した。
 → [adr/0010](adr/0010-gsi-std-raster-style.md)
+
+## D11(ADR 0009追記): 概要ページのスケールバーが乱れる不具合の暫定対応
+
+実機(macOS Brave)報告([dwg7/zukaku#4](https://github.com/dwg7/zukaku/issues/4))を
+受け、ADR 0009の`renderScale`オフスクリーンステージのCSS配置を、極端な負の
+オフセット(`left:-99999px`等)から`position:fixed; opacity:0;
+pointer-events:none;`という一般的な「原点付近だが不可視」の手法に変更した。
+色収差(RGBフリンジ)のピクセル解析から、実ブラウザの印刷パイプライン
+(Playwrightの`page.pdf()`とは別コードパス)特有の合成問題と推測しての対応。
+Playwrightでは回帰(レイアウト崩れ)がないことのみ確認済みで、実際に直っているかは
+ユーザーの実機再確認待ち。
+→ [adr/0009](adr/0009-overview-zoom-level-shift.md)の追記セクション参照
+
+## D12(ADR 0007追記): Windows Edge/Chromeの印刷レイアウト崩れをプラットフォーム別CSS戦略で回避
+
+実機報告([dwg7/zukaku#2](https://github.com/dwg7/zukaku/issues/2))により、
+macOS Braveでは良好だがWindows Edge/Chromeでは印刷レイアウトが崩れることが
+判明。調査の結果、Windowsの印刷は「Microsoft Print to PDF」等のOSプリンタ
+ドライバ層を経由し、そこがCSSの`@page`単位でのportrait/landscape切り替え
+(ADR 0007の核心設計)を誤動作させる既知の問題があると判明した。「macOS Brave
+の正常動作を壊さない」という制約があったため、名前付きページ混在を一律で
+やめるのではなく、**`navigator.userAgentData.platform`によるプラットフォーム
+判定で2つのCSS戦略を切り替える**方式にした: 非Windowsではこれまで通り
+(`strategy-mixed`、各ページが自分の`@page`を持つ)、Windowsでは単一の物理
+`@page`を宣言し、少数派の向きのページだけ中身を`transform:rotate(90deg)`で
+回転させる(`strategy-rotate`)。Playwrightで両戦略をUser-Agent偽装により検証し、
+Mac側は生成PDFのページサイズ・見た目が完全に不変(回帰なし)、Windows側は
+全ページが単一の物理サイズになることを確認した。実際にWindows上で不具合が
+解消するかはユーザーの実機再確認待ち。
+→ [adr/0007](adr/0007-client-side-print-mode.md)の追記セクション参照

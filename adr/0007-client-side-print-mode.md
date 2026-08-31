@@ -144,9 +144,103 @@ landscape、詳細ページはportraitという混在ケース)、`preferCSSPage
 `scripts/render/page.html`(Playwright/Actions経路)にも同一内容を適用しており、
 本ADRのPrint in Browser固有の変更ではない。
 
+### 追記(2026-08-31): Windows Edge/Chromeでの印刷レイアウト崩れと対応
+
+macOS Braveでは良好だが、**Windows上のEdge・Chromeでは印刷レイアウトが崩れる**
+(余白がずれる、地図ペインの縦横比が潰れる)という報告があった
+([dwg7/zukaku#2](https://github.com/dwg7/zukaku/issues/2))。「Chromium系ブラウザは
+安定」という上記表の前提が、少なくともWindows上では成り立たないことが判明した。
+
+#### 調査
+
+Web検索により、関連性の高い既知の事象が見つかった:
+
+- ["Microsoft Print to PDF now Auto Rotates Landscape pages to
+  Portrait?"](https://learn.microsoft.com/en-us/answers/questions/4299199/microsoft-print-to-pdf-now-auto-rotates-landscape) ——
+  Windowsの「Microsoft Print to PDF」(仮想プリンタドライバ)には、ページの
+  向き(portrait/landscape)を自動的に強制変換してしまう既知の挙動がある。
+- ["Edge will not auto-rotate pages of a
+  PDF"](https://learn.microsoft.com/en-us/answers/questions/3257579/edge-will-not-auto-rotate-pages-of-a-pdf) ——
+  Windows側のPDF/印刷スタックが、ページごとの向き指定を尊重しない・混在に
+  対応しないケースが他にも報告されている。
+- [Chrome "Print to PDF" and headless --print-to-pdf aren't the
+  same!](https://andre.arko.net/2025/05/25/chrome-headless-print-to-pdf/) ——
+  ブラウザの「印刷 → PDFとして保存」(実際のOS印刷パイプライン経由)と、
+  Playwrightの`page.pdf()`(CDP経由の直接呼び出し)は別の内部コードパスである。
+
+macOSの「PDFとして保存」はブラウザ(Chromium)自身が直接PDFを書き出す内部処理だが、
+Windowsでは実際のOSプリンタドライバ(仮想プリンタ含む)を経由することが多く、
+**そのドライバ層でページの向きが上書きされる**。本ADRが採用した「1つの印刷ジョブ内で
+named pagesによりportrait/landscapeを混在させる」設計は、この種のドライバ層に
+弱いことが裏付けられた。
+
+#### 対応: プラットフォームでCSS戦略を切り替える(名前混在をやめない)
+
+issueには「macOS Braveでの正常な動作を破壊しない方向で」という明示の制約が
+あった。名前付きページの混在をブラウザ問わず一律でやめる案(全ページを単一の
+`@page`にし、向きが違うページは中身をCSS`transform: rotate(90deg)`する)も
+検討したが、これは**macOS Braveの既に正しい挙動まで変えてしまう**(landscapeページが
+実際にlandscape用紙で出ていたのが、portrait用紙+回転コンテンツに変わる)ため、
+制約に反する。
+
+代わりに、**2つの戦略を実行時にプラットフォームで切り替える**方式にした:
+
+- `strategy-mixed`(デフォルト、Windows以外): 従来通り。各ページが自分の
+  `@page`(`print-portrait`/`print-landscape`)を直接持つ。macOS Braveでの挙動は
+  一切変わらない。
+- `strategy-rotate`(Windows限定): ジョブ全体で単一の物理`@page`
+  (このアトラスの過半数のページが使っている向き)を宣言し、少数派の向きの
+  ページだけ、その中身をCSSの`rotate(90deg)`で回転させて単一の物理ページに
+  収める(portrait専用プリンタにlandscapeジョブを送ったときに実際のプリンタが
+  行うのと同じ古典的な手法)。印刷ドライバに向きの切り替えを一切見せないため、
+  Windowsのドライバ層の不具合を回避できる。
+
+どちらの戦略を使うかは、実際の不具合(印刷ドライバの挙動)をランタイムAPIで
+機能検出する方法が無いため、`navigator.userAgentData.platform`
+(フォールバックとして`navigator.userAgent`の`Windows`マッチ)によるプラットフォーム
+判定で決めている(`isLikelyWindows()`、[docs/index.html](../docs/index.html))。
+
+両戦略とも同じDOM構造(`.print-page` > `.print-page-inner` >
+header/map/footer)を`preparePrintPages()`が生成し、CSS側だけが戦略ごとに
+異なる(`#print-root`のクラスで分岐)。
+
+##### rotate戦略の幾何学
+
+`.print-page-inner`(向きが逆、つまり幅高さが入れ替わった箱)を、`top:0;
+left:<baseページ自身の幅>; transform-origin:0 0; transform:rotate(90deg);`で
+配置すると、回転後のbounding boxがちょうど`.print-page`(baseの物理サイズ)を
+埋める。これは「回転の軸(pivot)を`(baseW, 0)`に置き、90°回転で
+`(dx,dy) → (-dy,dx)`という変換をpivot起点のローカル座標に適用する」という
+標準的な回転行列の計算から導出できる(inner箱の幅・高さがbaseの高さ・幅と
+入れ替わっている、という前提が成り立つ限り、baseがportrait/landscapeどちらの
+場合でも同じ式`left: baseW`が使える)。
+
+#### 検証(2026-08-31)
+
+Playwrightで、同一のグリッド構成(帯広1行×3列、詳細ページportrait+概要landscape)を
+2通りのUser-Agent(既定=Mac、Windows偽装UA)でレンダリングして比較:
+
+- Mac UA: `strategy-mixed`が選ばれ、生成PDFの各ページのMediaBoxは従来通り
+  ページごとに異なる(概要=841.92×594.96pt、詳細=594.96×841.92pt)。目視でも
+  改修前と完全に同じ見た目——**回帰なし**。
+- Windows偽装UA: `strategy-rotate`が選ばれ、生成PDFの全ページのMediaBoxが
+  594.96×841.92pt(portrait A4)で統一されることを確認(`pypdf`で各ページの
+  `mediabox`を直接検査)。概要ページの内容は90°回転して描画され、目視でも
+  「用紙を横向きにすれば正しく読める」形で正しく収まっていることを確認。
+
+Playwrightの`page.pdf()`は実際のWindows印刷ドライバを経由しないため、
+**この対応が実際にWindows Edge/Chromeでの不具合を解消するかはユーザーによる
+実機再確認が必要**。
+
 ## 参考
 
 - MDN `page-orientation`: https://developer.mozilla.org/en-US/docs/Web/CSS/@page/page-orientation
 - Controlling the Settings in Chrome's Print Dialogue With CSS:
   https://excessivelyadequate.com/posts/print.html
 - Playwright `page.pdf()` `preferCSSPageSize`オプション
+- [Microsoft Print to PDF now Auto Rotates Landscape pages to
+  Portrait?](https://learn.microsoft.com/en-us/answers/questions/4299199/microsoft-print-to-pdf-now-auto-rotates-landscape)
+- [Edge will not auto-rotate pages of a
+  PDF](https://learn.microsoft.com/en-us/answers/questions/3257579/edge-will-not-auto-rotate-pages-of-a-pdf)
+- [Chrome "Print to PDF" and headless --print-to-pdf aren't the
+  same!](https://andre.arko.net/2025/05/25/chrome-headless-print-to-pdf/)

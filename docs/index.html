@@ -160,64 +160,107 @@
 
   #print-root { display: none; }
 
-  /* ADR 0007: client-side print mode. Named @page rules per orientation let
-     one print job mix portrait and landscape pages — verified working via
-     Playwright's page.pdf({preferCSSPageSize:true}) before building this
-     (that flag makes Playwright honor these same @page rules instead of a
-     fixed size, so it's a faithful stand-in for a real "Save as PDF").
-     margin:0 here — all spacing is handled by .print-map/.print-header below
-     instead, so this stays in lockstep with scripts/render/page.html (which
-     also does its own layout rather than relying on a print engine's page
-     margin box). */
+  /* ADR 0007 + issue #2 (2026-08-31): a single print job used to always
+     declare a different @page size per page (named print-portrait/
+     print-landscape) so portrait and landscape pages could mix in one job.
+     That's known-good on macOS Brave's own "Save as PDF", but breaks on
+     Windows Edge/Chrome — those route through the OS print subsystem (e.g.
+     the "Microsoft Print to PDF" driver), which is known to mishandle or
+     auto-rotate a per-page @page orientation switch mid-job (see ADR 0007's
+     addendum for sources). The issue explicitly asked not to break the
+     already-correct macOS behavior, so this isn't a blanket switch: two
+     strategies coexist, chosen at runtime (isLikelyWindows(), below) by
+     platform, not by feature-detecting the actual bug (there's no API for
+     that).
+       - .strategy-mixed (default, everywhere but Windows): unchanged from
+         before — each page's own @page controls its own physical size.
+       - .strategy-rotate (Windows only): declares exactly ONE physical
+         @page for the whole job (whichever orientation the majority of
+         this atlas's pages use), and for the minority orientation, rotates
+         that page's *content* 90° with a CSS transform instead of changing
+         the page's own size — the same trick a landscape-fed print job on
+         a portrait-only printer already relies on. The physical page never
+         changes size mid-job, so there's nothing for a print driver to get
+         wrong.
+     Both strategies share the same DOM shape (.print-page > .print-page-inner
+     > header/map/footer) built by preparePrintPages() below; only the CSS
+     driving .print-page/.print-page-inner's sizing differs. */
   @page print-portrait { size: 210mm 297mm; margin: 0; }
   @page print-landscape { size: 297mm 210mm; margin: 0; }
+  @page print-base-portrait { size: 210mm 297mm; margin: 0; }
+  @page print-base-landscape { size: 297mm 210mm; margin: 0; }
 
   @media print {
     body > *:not(#print-root) { display: none !important; }
     #print-root { display: block; }
+
     .print-page {
       position: relative;
       box-sizing: border-box;
       break-after: page;
+      overflow: hidden;
     }
-    .print-page.portrait { page: print-portrait; width: 210mm; height: 297mm; }
-    .print-page.landscape { page: print-landscape; width: 297mm; height: 210mm; }
+
+    /* strategy-mixed: .print-page itself carries this page's own @page. */
+    #print-root.strategy-mixed .print-page.portrait-page { page: print-portrait; width: 210mm; height: 297mm; }
+    #print-root.strategy-mixed .print-page.landscape-page { page: print-landscape; width: 297mm; height: 210mm; }
+    #print-root.strategy-mixed .print-page-inner { position: absolute; inset: 0; }
+
+    /* strategy-rotate: .print-page always carries the job's single base
+       @page; .print-page-inner carries this page's own logical size and,
+       when it disagrees with the base, is rotated 90° around its own
+       top-left corner (after offsetting left by the base page's own width)
+       so its rotated bounding box exactly fills .print-page instead — see
+       the ADR 0007 addendum for the derivation. */
+    #print-root.strategy-rotate.base-portrait .print-page { page: print-base-portrait; width: 210mm; height: 297mm; }
+    #print-root.strategy-rotate.base-landscape .print-page { page: print-base-landscape; width: 297mm; height: 210mm; }
+    #print-root.strategy-rotate .print-page-inner.portrait-page { width: 210mm; height: 297mm; }
+    #print-root.strategy-rotate .print-page-inner.landscape-page { width: 297mm; height: 210mm; }
+    #print-root.strategy-rotate .print-page-inner:not(.rotated) { position: absolute; top: 0; left: 0; }
+    #print-root.strategy-rotate.base-portrait .print-page-inner.rotated {
+      position: absolute; top: 0; left: 210mm;
+      transform-origin: 0 0; transform: rotate(90deg);
+    }
+    #print-root.strategy-rotate.base-landscape .print-page-inner.rotated {
+      position: absolute; top: 0; left: 297mm;
+      transform-origin: 0 0; transform: rotate(90deg);
+    }
 
     /* Print margins (2026-08-31, uniform-15mm revision): the map frame keeps
        nothing on top of its own content — title/index live in a header band
        above the neatline, the scale bar lives in a footer band below it.
        Numbers must match scripts/render/page.html's #map/#header/#footer. */
-    .print-page .print-map {
+    .print-page-inner .print-map {
       position: absolute;
       top: 15mm; left: 15mm; right: 15mm; bottom: 15mm;
       box-sizing: border-box;
       border: 0.75pt solid #000; /* neatline */
       overflow: hidden;
     }
-    .print-page .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+    .print-page-inner .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
 
-    .print-page .print-header {
+    .print-page-inner .print-header {
       position: absolute;
       top: 0; left: 15mm; right: 15mm; height: 15mm;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .print-page .print-brand, .print-page .print-ref {
+    .print-page-inner .print-brand, .print-page-inner .print-ref {
       font: bold 5mm/1 sans-serif; color: #222;
     }
-    .print-page .print-ref { text-align: right; }
+    .print-page-inner .print-ref { text-align: right; }
 
     /* Footer band (bottom margin): scale bar only — no compass (rotation is
        locked in the picker UI, so north is always up and a compass would be
        redundant; also "put nothing on top of the map itself", 2026-08-31). */
-    .print-page .print-footer {
+    .print-page-inner .print-footer {
       position: absolute;
       bottom: 0; left: 15mm; right: 15mm; height: 15mm;
       display: flex;
       align-items: center;
     }
-    .print-page .print-footer .maplibregl-ctrl-scale { margin: 0; font-size: 3mm; }
+    .print-page-inner .print-footer .maplibregl-ctrl-scale { margin: 0; font-size: 3mm; }
   }
 </style>
 </head>
@@ -617,14 +660,30 @@ shareButton.addEventListener("click", () => {
 // trade-off is the user has to be present to complete the print step, and
 // output quality depends on their own browser/OS — see ADR 0007.
 //
-// Named per-orientation @page rules (print-portrait/print-landscape, defined
-// above) let one print job mix portrait and landscape pages; verified this
-// actually works in Chromium via a throwaway Playwright spike
-// (page.pdf({preferCSSPageSize:true}) honors the same @page rules a real
-// "Save as PDF" would) before writing this.
+// Windows Edge/Chrome route "print" through the OS print subsystem, which
+// mishandles a per-page @page orientation switch mid-job (issue #2,
+// 2026-08-31) — no runtime API can feature-detect that print-driver quirk
+// directly, so this falls back to a platform check. Only gates which print
+// CSS strategy is used (see above); doesn't affect anything else.
+function isLikelyWindows() {
+  if (navigator.userAgentData && navigator.userAgentData.platform) {
+    return navigator.userAgentData.platform === "Windows";
+  }
+  return /Windows/i.test(navigator.userAgent);
+}
+
 async function preparePrintPages(pages) {
   const printRoot = document.getElementById("print-root");
   printRoot.innerHTML = "";
+
+  // strategy-mixed (default) reproduces the exact, already-verified-good
+  // macOS Brave behavior unchanged. strategy-rotate (Windows only) declares
+  // one physical @page for the whole job and rotates the minority
+  // orientation's content instead — see the print CSS above.
+  const useRotateStrategy = isLikelyWindows();
+  const landscapeCount = pages.filter((p) => p.orientation === "landscape").length;
+  const baseOrientation = landscapeCount > pages.length - landscapeCount ? "landscape" : "portrait";
+  printRoot.className = useRotateStrategy ? `strategy-rotate base-${baseOrientation}` : "strategy-mixed";
 
   for (const spec of pages) {
     const orientation = spec.orientation === "landscape" ? "landscape" : "portrait";
@@ -697,7 +756,17 @@ async function preparePrintPages(pages) {
     stage.remove();
 
     const section = document.createElement("section");
-    section.className = `print-page ${orientation}`;
+    section.className = `print-page ${orientation}-page`;
+
+    // Inner box carries this page's own logical orientation (issue #2,
+    // 2026-08-31). Under strategy-rotate it's rotated via CSS instead of
+    // the physical page being rotated, when it disagrees with the job's
+    // base orientation; under strategy-mixed the "rotated" class is simply
+    // never added, and .print-page itself (not .print-page-inner) carries
+    // the per-page @page. See the print CSS above.
+    const rotated = useRotateStrategy && orientation !== baseOrientation;
+    const inner = document.createElement("div");
+    inner.className = `print-page-inner ${orientation}-page${rotated ? " rotated" : ""}`;
 
     // Header band (above the neatline): title left, grid reference right —
     // matches scripts/render/page.html's #header.
@@ -713,7 +782,7 @@ async function preparePrintPages(pages) {
       ref.textContent = spec.ref;
       header.appendChild(ref);
     }
-    section.appendChild(header);
+    inner.appendChild(header);
 
     // Map box: neatline + snapshot only, nothing else on top of it.
     const mapBox = document.createElement("div");
@@ -721,15 +790,16 @@ async function preparePrintPages(pages) {
     const img = document.createElement("img");
     img.src = dataUrl;
     mapBox.appendChild(img);
-    section.appendChild(mapBox);
+    inner.appendChild(mapBox);
 
     // Footer band (below the neatline): scale bar — matches
     // scripts/render/page.html's #footer.
     const footer = document.createElement("div");
     footer.className = "print-footer";
     footer.innerHTML = scaleHTML;
-    section.appendChild(footer);
+    inner.appendChild(footer);
 
+    section.appendChild(inner);
     printRoot.appendChild(section);
   }
 }

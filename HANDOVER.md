@@ -70,6 +70,20 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   `styles/std.json`を新規作成しhfu/starsにPRを起票([hfu/stars#6](https://github.com/hfu/stars/pull/6)、
   マージ・Martin再起動・本番反映済み)。`docs/index.html`側の変更はスタイル選択
   ボタン1つの追加のみ。実機検証済み(2026-08-31)。
+- **実機報告2件への暫定対応**(2026-08-31、[dwg7/zukaku](https://github.com/dwg7/zukaku/issues)の
+  open issue分析・計画に基づく)。いずれもPlaywrightでは再現できない、実ブラウザの
+  印刷パイプライン特有の挙動が疑われるため、**Playwrightでの回帰確認のみ完了、
+  ユーザーによる実機再確認が必須**:
+  - [issue #4](https://github.com/dwg7/zukaku/issues/4)(概要ページのスケールバーの乱れ):
+    ADR 0009のオフスクリーンステージのCSS配置を、極端な負のオフセットから
+    `opacity:0`+`pointer-events:none`の一般的な手法に変更。
+    [ADR 0009追記](adr/0009-overview-zoom-level-shift.md#追記2026-08-31-概要ページのスケールバーが乱れる不具合と暫定対応)参照。
+  - [issue #2](https://github.com/dwg7/zukaku/issues/2)(Windows Edge/Chromeでの
+    印刷レイアウト崩れ): プラットフォーム判定(`navigator.userAgentData.platform`)で
+    印刷CSS戦略を切り替え。非Windowsは従来通り(名前付きページ混在、macOS Brave
+    での動作は完全不変)、Windowsのみ単一`@page`+`transform:rotate(90deg)`方式に
+    切り替えてOS印刷ドライバの向き切替バグを回避。
+    [ADR 0007追記](adr/0007-client-side-print-mode.md#追記2026-08-31-windows-edgechromeでの印刷レイアウト崩れと対応)参照。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -97,6 +111,16 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 - [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
   実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
   Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
+- **要ユーザー確認: [issue #4](https://github.com/dwg7/zukaku/issues/4)・
+  [issue #2](https://github.com/dwg7/zukaku/issues/2)への対応が実際に効いているか**
+  (2026-08-31)。どちらもPlaywrightでは再現できなかった不具合のため、暫定対応は
+  Playwrightでの回帰確認のみで実機未確認。issue #4はmacOS Braveでの概要ページ
+  再印刷、issue #2はWindows Edge/Chromeでの印刷レイアウト再確認が必要。
+- **未着手: [issue #3](https://github.com/dwg7/zukaku/issues/3)**(地図の状態を
+  document fragmentで表現する)。issue #4・#2(印刷パイプラインのバグ)を優先した
+  ため保留中。`docs/index.html`のMapLibreインスタンスに`hash:"map"`を追加し、
+  `m`/`n`/`title`/`style`/除外セルを同じfragmentの`map=...`部分より後ろに
+  追記する設計(詳細は計画済み、未実装)。
 
 ## 読むべき順序
 
