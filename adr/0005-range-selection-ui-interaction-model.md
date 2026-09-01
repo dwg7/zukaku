@@ -311,6 +311,45 @@ padding機能にそのまま渡す)。概要ページのみ`padding: 50`(px)を�
 で追加した`padding: 50`が同時に解消することを、同じビエンチャンの範囲で
 再検証済み(paddingありだとラベルとグリッドの間に空白ができ、重ならない)。
 
+## インデックスラベルの拡大・白背景化(2026-09-01)
+
+[dwg7/zukaku#5](https://github.com/dwg7/zukaku/issues/5): 概要ページ(p.1)の
+グリッド参照ラベル(A1、A2、...)が小さすぎて読みにくい、「Zukaku」「概要」の
+見出し文字と同程度まで大きくしてほしい、Field Papers同様に黒字・白背景にして
+地図に埋もれないようにしてほしい、という報告。
+
+**原因**: [ADR 0009](0009-overview-zoom-level-shift.md)のズームレベルシフトは、
+概要ページを`renderScale`倍だけ大きいオフスクリーンキャンバスにステージングして
+スナップショットを撮り、それを通常の印刷用フレームまで縮小して表示する。
+グリッド参照ラベルはこのキャンバス内にMapLibreのsymbolレイヤーとして描画される
+地図コンテンツの一部なので、地図本体と一緒に`1/renderScale`倍だけ縮小されて
+しまっていた——一方「Zukaku」「概要」は`#header`側のプレーンなHTML/CSSテキスト
+(このスケーリングの影響を受けない)なので、両者の見た目の大きさに乖離が生じていた。
+
+**対応**:
+- `docs/index.html`の`addOverviewGridLayers()`と`scripts/render/page.html`の
+  同等ロジックの両方で、ラベルの`text-size`(および背景アイコンのパディング)に
+  `labelScale = Math.max(renderScale.x, renderScale.y)`を掛け、縮小分を打ち消す
+  ようにした(概要ページの`padding`が既に同じ`Math.max(cols, rows)`で
+  スケールしているのに倣った)。
+- 背景を「白塗り」にする手段として、`text-halo-width`(細い縁取り)ではなく、
+  `icon-image`+`icon-text-fit: "both"`を使う方式に変更した。text-haloは
+  SDFグリフの固定バッファ幅に上限があり、太くしようとしても途中でクリップされて
+  背景らしく見えない。単色の白い正方形画像を`icon-text-fit`で文字の
+  バウンディングボックスに合わせて引き伸ばす方式なら、単色ゆえに拡大縮小しても
+  継ぎ目やぼやけが出ず、Field Papers風の「黒字・白背景」を素直に再現できる。
+  `icon-allow-overlap`/`text-allow-overlap`も`true`にし、背景ボックス分
+  footprint が増えたことでラベルが衝突判定により脱落しないようにした。
+
+**検証(2026-09-01)**: 両レンダー経路をPlaywrightで検証。2×2グリッド・
+Save Paperで1セル除外、という構成で概要ページをレンダリングし、A1/A2/B1が
+「Zukaku」「概要」と同程度以上の大きさの白背景付き黒字で表示され、除外した
+セル(B2)にはラベルが出ないことを目視確認した([scripts/render/page.html](../scripts/render/page.html)
+経由・[docs/index.html](../docs/index.html)の「Print in Browser」経由の両方)。
+この修正はズームレベルシフトの倍率を打ち消すだけの、地図データや印刷パイプライン
+そのものには手を入れない変更なので、issue #4・#2と異なりPlaywrightでの検証で
+十分と判断した(実機再確認は必須としない)。
+
 ## 参考
 
 - Field Papers Compose画面: https://fieldpapers.org/compose

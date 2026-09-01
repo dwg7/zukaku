@@ -2,7 +2,7 @@
 
 zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)向け。
 
-## 現状(2026-08-31時点) — MVPは実際にデプロイ・動作確認済み
+## 現状(2026-09-01時点) — MVPは実際にデプロイ・動作確認済み
 
 調査・設計から実装、そして**実際のGitHub上へのデプロイ・動作確認まで完了**。
 ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
@@ -70,10 +70,11 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   `styles/std.json`を新規作成しhfu/starsにPRを起票([hfu/stars#6](https://github.com/hfu/stars/pull/6)、
   マージ・Martin再起動・本番反映済み)。`docs/index.html`側の変更はスタイル選択
   ボタン1つの追加のみ。実機検証済み(2026-08-31)。
-- **実機報告2件への暫定対応**(2026-08-31、[dwg7/zukaku](https://github.com/dwg7/zukaku/issues)の
+- **実機報告2件への対応**(2026-08-31、[dwg7/zukaku](https://github.com/dwg7/zukaku/issues)の
   open issue分析・計画に基づく)。いずれもPlaywrightでは再現できない、実ブラウザの
-  印刷パイプライン特有の挙動が疑われるため、**Playwrightでの回帰確認のみ完了、
-  ユーザーによる実機再確認が必須**:
+  印刷パイプライン特有の挙動が疑われたため暫定対応はPlaywrightでの回帰確認のみで
+  出していたが、**2026-09-01にユーザーが実機(macOS Brave / Windows Edge・Chrome)で
+  再確認し、いずれも解消していることを確認済み**:
   - [issue #4](https://github.com/dwg7/zukaku/issues/4)(概要ページのスケールバーの乱れ):
     ADR 0009のオフスクリーンステージのCSS配置を、極端な負のオフセットから
     `opacity:0`+`pointer-events:none`の一般的な手法に変更。
@@ -90,6 +91,14 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
   タイトル・Save Paperの除外セル)を同じ`location.hash`に同居させる形で追加。
   Playwrightで往復テスト(状態作成→hash取得→再アクセスで復元)を実施し、
   すべてのフィールドが正しく復元されることを確認済み。
+- **概要ページのインデックスラベルを拡大・白背景化**([ADR 0005追記](adr/0005-range-selection-ui-interaction-model.md#インデックスラベルの拡大白背景化2026-09-01)、
+  [issue #5](https://github.com/dwg7/zukaku/issues/5))。ズームレベルシフト
+  (ADR 0009)により地図コンテンツと一緒に縮小されてしまっていたグリッド参照
+  ラベル(A1、A2、...)の`text-size`を`renderScale`で補正し、`Zukaku`/`概要`の
+  見出しと同程度の大きさに。背景も`text-halo-width`(クリップされ背景らしく
+  見えない)から`icon-image`+`icon-text-fit`による単色白背景に変更し、
+  Field Papers同様の黒字・白背景を実現。両レンダリング経路でPlaywright検証済み
+  (印刷パイプラインには手を入れない変更のため実機再確認は不要と判断)。
 
 ### GitHub Actionsパイプライン([.github/workflows/atlas.yml](.github/workflows/atlas.yml)) — 実際に動作確認済み
 
@@ -117,15 +126,9 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 - [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
   実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
   Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
-- **要ユーザー確認: [issue #4](https://github.com/dwg7/zukaku/issues/4)・
-  [issue #2](https://github.com/dwg7/zukaku/issues/2)への対応が実際に効いているか**
-  (2026-08-31、ユーザーは2026-09-01に実機確認予定と表明済み)。どちらも
-  Playwrightでは再現できなかった不具合のため、暫定対応はPlaywrightでの回帰確認
-  のみで実機未確認。issue #4はmacOS Braveでの概要ページ再印刷、issue #2は
-  Windows Edge/Chromeでの印刷レイアウト再確認が必要。直っていなければ、
-  issue #4は次善策(scale barもcanvasスナップショットに焼き込む)、issue #2は
-  ブラウザ判定での警告表示や「Share」への誘導を検討する
-  (いずれもADR 0009/0007の追記セクションに記載済み)。
+- issue #4・#2は2026-09-01の実機確認で解消を確認済み(上記参照)。issue #5
+  (インデックスラベルの拡大・白背景化)はPlaywright検証のみで完了扱い——実機での
+  最終確認は歓迎だが、印刷パイプラインに手を入れる変更ではないため必須ではない。
 
 ## 読むべき順序
 

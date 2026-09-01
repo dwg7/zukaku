@@ -170,3 +170,20 @@ Mac側は生成PDFのページサイズ・見た目が完全に不変(回帰な�
 (状態を作る→hashを取得→そのURLに再アクセス→状態が完全に復元されることを確認)
 を実施済み。
 → [adr/0011](adr/0011-shareable-state-via-document-fragment.md)
+
+## D14(ADR 0005追記): 概要ページのインデックスラベルを拡大・白背景化
+
+実機報告([dwg7/zukaku#5](https://github.com/dwg7/zukaku/issues/5))により、
+概要ページ(p.1)のグリッド参照ラベル(A1、A2、...)が「Zukaku」「概要」の
+見出しに比べて小さすぎることが判明。原因はADR 0009のズームレベルシフト
+——ラベルはオフスクリーンの巨大キャンバス内にMapLibreのsymbolレイヤーとして
+描かれる地図コンテンツの一部なので、地図本体と一緒に`1/renderScale`倍だけ
+縮小されてしまっていた(見出しは`#header`側の別スケールのプレーンテキストで
+影響を受けない)。対応: ラベルの`text-size`に`renderScale`を打ち消す係数を
+掛けて縮小分を補正し、あわせて背景を「白塗り」にする手段を`text-halo-width`
+(SDFバッファの上限でクリップされ背景らしく見えない)から`icon-image`+
+`icon-text-fit: "both"`(単色画像を文字のバウンディングボックスへ引き伸ばす)
+に変更、Field Papers同様の黒字・白背景を実現した。両レンダー経路で
+Playwright検証済み。地図データや印刷パイプラインには手を入れない変更のため、
+issue #4・#2と異なり実機再確認は必須としない。
+→ [adr/0005](adr/0005-range-selection-ui-interaction-model.md)の追記セクション参照

@@ -236,12 +236,41 @@
         paint: { "line-color": "#000", "line-width": 1.5 },
       });
       map.addSource("zukaku-grid-labels", { type: "geojson", data: points });
+      // Field Papers paints a solid white box behind each index label
+      // (issue #5, 2026-09-01) rather than a thin outline, so it reads
+      // clearly over whatever's on the map underneath. A halo can't do
+      // that — its width is capped by the SDF glyph's fixed buffer, so it
+      // clips before it looks like a real background — but a stretched
+      // solid-color icon behind the text can. The icon is a plain white
+      // square: a solid-color image has no seams or blur under
+      // `icon-text-fit`'s scaling regardless of source size.
+      //
+      // text-size (and the background padding) is scaled up by the same
+      // factor the offscreen canvas was inflated by (renderScale, ADR
+      // 0009) — this whole page gets shrunk back down to the normal print
+      // footprint, which was shrinking these labels along with it.
+      const labelScale = renderScale ? Math.max(renderScale.x, renderScale.y) : 1;
+      const bg = document.createElement("canvas");
+      bg.width = 8;
+      bg.height = 8;
+      bg.getContext("2d").fillStyle = "#fff";
+      bg.getContext("2d").fillRect(0, 0, 8, 8);
+      map.addImage("zukaku-label-bg", bg.getContext("2d").getImageData(0, 0, 8, 8));
       map.addLayer({
         id: "zukaku-grid-labels",
         type: "symbol",
         source: "zukaku-grid-labels",
-        layout: { "text-field": ["get", "label"], "text-size": 28, "text-font": ["Noto Sans Bold"] },
-        paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 2 },
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 28 * labelScale,
+          "text-font": ["Noto Sans Bold"],
+          "icon-image": "zukaku-label-bg",
+          "icon-text-fit": "both",
+          "icon-text-fit-padding": [2, 4, 2, 4].map((n) => n * labelScale),
+          "icon-allow-overlap": true,
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#000" },
       });
     }
   });

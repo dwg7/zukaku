@@ -821,7 +821,12 @@ async function preparePrintPages(pages) {
       pageMap.on("error", (e) => reject(e.error || e));
       pageMap.on("load", () => {
         pageMap.setTerrain(null);
-        if (spec.grid) addOverviewGridLayers(pageMap, spec.grid);
+        // Grid labels are drawn into the same oversized offscreen canvas as
+        // the map itself (renderScale, ADR 0009), so they get shrunk right
+        // back down along with it — compensate by the same factor so they
+        // land at their intended size once printed (issue #5, 2026-09-01).
+        const labelScale = spec.renderScale ? Math.max(spec.renderScale.x, spec.renderScale.y) : 1;
+        if (spec.grid) addOverviewGridLayers(pageMap, spec.grid, labelScale);
       });
       pageMap.once("idle", resolve);
     });
@@ -891,7 +896,14 @@ async function preparePrintPages(pages) {
 
 // Same overview-page grid overlay as scripts/render/page.html: draw each
 // detail page's cell as a rectangle + grid-reference label.
-function addOverviewGridLayers(pageMap, cells) {
+//
+// labelScale compensates for the zoom-level-shift trick (ADR 0009): this
+// whole page is snapshotted from an oversized offscreen canvas and then
+// shrunk back down to the normal print footprint, which was shrinking these
+// labels along with it — issue #5 (2026-09-01) reported the index labels
+// unreadably small next to the "Zukaku"/"概要" header text. Multiplying by
+// the same factor the canvas was inflated by restores their intended size.
+function addOverviewGridLayers(pageMap, cells, labelScale) {
   const polygons = {
     type: "FeatureCollection",
     features: cells.map((c) => ({
@@ -942,12 +954,34 @@ function addOverviewGridLayers(pageMap, cells) {
     paint: { "line-color": "#000", "line-width": 1.5 },
   });
   pageMap.addSource("zukaku-grid-labels", { type: "geojson", data: points });
+  // Field Papers itself paints a solid white box behind each index label
+  // (issue #5) rather than a thin outline, so the label reads clearly no
+  // matter what's underneath on the map. A halo can't do that (its width is
+  // capped by the SDF glyph's fixed buffer, so it clips before it looks like
+  // a real background) — a stretched solid-color icon behind the text does.
+  // The icon is a plain white square: solid-color images have no seams or
+  // blur under `icon-text-fit`'s scaling regardless of source size.
+  const bg = document.createElement("canvas");
+  bg.width = 8;
+  bg.height = 8;
+  bg.getContext("2d").fillStyle = "#fff";
+  bg.getContext("2d").fillRect(0, 0, 8, 8);
+  pageMap.addImage("zukaku-label-bg", bg.getContext("2d").getImageData(0, 0, 8, 8));
   pageMap.addLayer({
     id: "zukaku-grid-labels",
     type: "symbol",
     source: "zukaku-grid-labels",
-    layout: { "text-field": ["get", "label"], "text-size": 28, "text-font": ["Noto Sans Bold"] },
-    paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 2 },
+    layout: {
+      "text-field": ["get", "label"],
+      "text-size": 28 * labelScale,
+      "text-font": ["Noto Sans Bold"],
+      "icon-image": "zukaku-label-bg",
+      "icon-text-fit": "both",
+      "icon-text-fit-padding": [2, 4, 2, 4].map((n) => n * labelScale),
+      "icon-allow-overlap": true,
+      "text-allow-overlap": true,
+    },
+    paint: { "text-color": "#000" },
   });
 }
 
