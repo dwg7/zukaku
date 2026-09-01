@@ -766,6 +766,29 @@ async function preparePrintPages(pages) {
   // one physical @page for the whole job and rotates the minority
   // orientation's content instead — see the print CSS above.
   const useRotateStrategy = isLikelyWindows();
+
+  // The overview page normally picks whichever orientation best fits the
+  // whole grid's aspect ratio (computePages()), independent of the detail
+  // pages' own orientation — efficient paper use, but it means the overview
+  // disagrees with every detail page whenever the grid is wider or taller
+  // than a single cell (e.g. any 1-row or 1-column grid). Under
+  // strategy-rotate that disagreement isn't just cosmetic: the outvoted
+  // overview page gets its content rotated 90° to fit the job's single
+  // physical orientation, so it has to be read with the sheet turned
+  // sideways relative to every other page — reported as "印刷が乱れる"
+  // (issue #6, 2026-09-01) even though nothing was actually corrupted. Since
+  // rotating even a single mismatched page is the exact thing strategy-rotate
+  // exists to hide from the print driver, avoid causing one in the first
+  // place here: pin the overview to the same orientation as the detail
+  // pages so every page already agrees before the majority vote below runs.
+  // strategy-mixed is unaffected (each page keeps its own true @page, so an
+  // efficiently-framed overview costs nothing there).
+  if (useRotateStrategy) {
+    for (const spec of pages) {
+      if (spec.grid) spec.orientation = state.orientation;
+    }
+  }
+
   const landscapeCount = pages.filter((p) => p.orientation === "landscape").length;
   const baseOrientation = landscapeCount > pages.length - landscapeCount ? "landscape" : "portrait";
   printRoot.className = useRotateStrategy ? `strategy-rotate base-${baseOrientation}` : "strategy-mixed";
