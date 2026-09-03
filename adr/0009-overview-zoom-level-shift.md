@@ -150,6 +150,56 @@ p.1についてもdetailページと同様に**canvasスナップショットに
   地図であることが分かる」ことを優先している(ユーザーの要望通り)。読みやすさが
   必要な場合は該当する詳細ページを参照する、という役割分担になる。
 
+## 追記(2026-09-03): 正方形でないグリッドで概要ページのアスペクト比が崩れる不具合と修正
+
+[dwg7/zukaku#7](https://github.com/dwg7/zukaku/issues/7): portrait印刷で、対象範囲が
+横長(行数≠列数、例: 2行×3列)の場合に、概要ページ(p.1)の地図だけ縦横比が崩れて
+表示される、という報告。
+
+### 原因
+
+`renderScale`によるオフスクリーンステージは、幅を`cols`倍、高さを`rows`倍と
+**軸ごとに別々の係数**で拡大している(`computePages()`の`renderScale: {x: cols,
+y: rows}`、[preparePrintPages()](../docs/index.html)・[page.html](../scripts/render/page.html)
+双方の`pxSize.width *= renderScale.x; pxSize.height *= renderScale.y;`)。この
+オフスクリーンキャンバスのアスペクト比は、`cols === rows`(正方形グリッド)の
+ときだけ、縮小先である`.print-map`のCSSボックス(固定のA4縦/横比)と一致する。
+`cols`と`rows`が異なるグリッドでは、キャンバスのアスペクト比が`cols/rows`倍
+ずれる。スナップショット画像をこの箱にはめ込む処理が`object-fit: fill`
+(縦横比を無視して箱いっぱいに引き伸ばす)だったため、このズレがそのまま
+地図コンテンツの引き伸ばし(縦横比の崩れ)として現れていた。
+
+これは[issue #6](https://github.com/dwg7/zukaku/issues/6)の修正(概要ページの向きを
+strategy-rotate時に`state.orientation`へ固定する)とは独立した、ADR 0009の
+オフスクリーンステージ導入時点(2026-08-31)から存在した不具合だった——概要
+ページの向きがグリッド全体のアスペクト比から自動選択される元々の設計でも、
+`renderScale.x/renderScale.y`(= `cols/rows`)が1でない限り同じズレが生じる。
+たまたま検証に使ったグリッドが正方形(3×3等)だったため、この時点では
+表面化していなかった。
+
+### 対応
+
+**縦横比を保ったまま箱に収める`object-fit: contain`に変更**した
+([docs/index.html](../docs/index.html)の`.print-map img`、
+[scripts/render/page.html](../scripts/render/page.html)の`img.style.objectFit`)。
+これにより、オフスクリーンキャンバスと表示ボックスのアスペクト比が
+どれだけずれていても、地図コンテンツ自体は常に正しい縦横比のまま描画され、
+はみ出す分は(引き伸ばしではなく)図郭内の余白として吸収される。詳細ページは
+`renderScale`を使わないため、そもそもアスペクト比のズレが起きず、この変更は
+実質的に無視できる(no-op)。
+
+`renderScale`自体(軸ごとに`cols`・`rows`を別々に掛ける方式)は変更していない
+——`object-fit: contain`が根本的な安全策になるため、今後どんな向き選択ロジックの
+変更があっても、この種の引き伸ばし不具合が再発しない設計になった。
+
+### 検証(2026-09-03)
+
+Playwrightで、issue #7と同じ形(2行×3列、portrait)を両レンダリング経路
+(scripts/render/page.html経由・docs/index.htmlの「Print in Browser」経由
+Windows偽装UA)でレンダリングし、地図コンテンツの建物・道路・河川の形状が
+歪まず、正しい縦横比で描画され、上下(または左右)に白い余白が入ることを
+目視確認した。
+
 ## 参考
 
 - [ADR 0005](0005-range-selection-ui-interaction-model.md) — 概要ページの元々の

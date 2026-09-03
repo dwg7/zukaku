@@ -287,6 +287,15 @@
     img.style.inset = "0";
     img.style.width = "100%";
     img.style.height = "100%";
+    // contain, not the CSS default (fill), issue #7: the offscreen stage is
+    // inflated per-axis by the grid's own cols/rows (renderScale above),
+    // which only shares #map's fixed A4 aspect ratio when cols === rows —
+    // any other grid shape hands this a differently-proportioned snapshot.
+    // `fill` would stretch it to match, visibly warping the map; `contain`
+    // letterboxes instead (a bit of blank margin inside the neatline, never
+    // distorted content). Detail pages have no renderScale, so their
+    // snapshot already matches #map's aspect exactly — a no-op for them.
+    img.style.objectFit = "contain";
     // Appended inside #map (the 15mm-inset frame), not the (possibly
     // offscreen and oversized, see renderScale above) render container —
     // the snapshot always lands in the real frame at its real print size,

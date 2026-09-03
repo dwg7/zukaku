@@ -237,7 +237,16 @@
       border: 0.75pt solid #000; /* neatline */
       overflow: hidden;
     }
-    .print-page-inner .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+    /* object-fit: contain (not fill), issue #7: the overview page's
+       offscreen stage (renderScale, ADR 0009) is inflated per-axis by the
+       grid's own cols/rows, which only shares this box's fixed A4 aspect
+       ratio when cols === rows — any other grid shape hands this a
+       differently-proportioned snapshot. `fill` would stretch it to match,
+       visibly warping the map; `contain` letterboxes instead (a bit of
+       blank margin inside the neatline, never distorted content). Detail
+       pages have no renderScale, so their snapshot already matches this
+       box's aspect exactly — contain vs fill is a no-op for them. */
+    .print-page-inner .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
     .print-page-inner .print-header {
       position: absolute;
@@ -800,7 +809,10 @@ async function preparePrintPages(pages) {
     // container so it fits its (much larger) bbox at close to the same zoom
     // a detail page would — see the renderScale comment in computePages().
     // The final display size is unaffected: .print-map's CSS box stays
-    // fixed and the snapshot <img> is scaled to fill it (object-fit: fill).
+    // fixed and the snapshot <img> is scaled (object-fit: contain, issue #7)
+    // to fit inside it without distorting the map when the grid isn't
+    // square (renderScale.x !== renderScale.y skews this container's own
+    // aspect ratio away from the print box's fixed A4 shape).
     if (spec.renderScale) {
       pxSize.width *= spec.renderScale.x;
       pxSize.height *= spec.renderScale.y;
