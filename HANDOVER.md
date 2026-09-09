@@ -191,12 +191,20 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 すべて完了。[dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8)の
 3PR計画はPR 1・PR 2完了、残るはPR 3のみ:
 
-- **[dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)PR 3**:
-  `scripts/render/page.html`(Playwright/GitHub Actions経路)を
-  `AtlasControl.prepare()`の消費に切り替える。`print()`ではなく
-  `prepare()`を使う(`window.print()`は呼ばれず、Playwright側の
-  `page.pdf()`が実際のトリガーになるため)。`docs/index.html`側は
-  [ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md)で完了済み。
+- **PR 3(`scripts/render/`のPlaywright/GitHub Actions経路)は設計調査のみ
+  完了、実装は保留・hfuさんの承認待ち**——[ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)
+  (提案中)参照。`docs/index.html`(PR 2)と違い、単なる置き換えでは
+  済まない: 現行の`scripts/render/lib.js#renderPage()`は「1ページ=1つの
+  独立したPlaywright `BrowserContext`+個別`page.pdf()`」を`atlas.js`が
+  `pdf-lib`で結合する設計だが、`AtlasControl.prepare()`は「1つのページに
+  全シートを構築し、`page.pdf()`を1回だけ呼ぶ」ことを前提にしている——
+  前提そのものが異なるため、`atlas.js`/`lib.js`/`page.html`の実質的な
+  書き直しになる。これは実際にGitHub Actions上で稼働し
+  `docs/responses/*.pdf`をpublicに生成している本番パイプラインであり、
+  CLAUDE.md 7節の「大きな設計判断は実装より先にADR案を提示し、承認を
+  得てから着手する」に該当すると判断し、ADR 0013に設計案・検討事項・
+  検証計画をまとめた上で実装を止めている。次に着手する場合はADR 0013の
+  承認から。
 - `@dwg7/maplibre-gl-atlas`のnpm公開(`NPM_TOKEN`設定、`v0.1.0`タグ)後、
   `docs/index.html`のimportをunpkg経由に切り替え、`docs/vendor/`を削除する
   (現在は暫定的にビルド成果物を手動配置——maplibre-gl-atlas自身のHANDOVER.md
