@@ -158,125 +158,25 @@
     pointer-events: auto;
   }
 
-  #print-root { display: none; }
-
-  /* ADR 0007 + issue #2 (2026-08-31): a single print job used to always
-     declare a different @page size per page (named print-portrait/
-     print-landscape) so portrait and landscape pages could mix in one job.
-     That's known-good on macOS Brave's own "Save as PDF", but breaks on
-     Windows Edge/Chrome — those route through the OS print subsystem (e.g.
-     the "Microsoft Print to PDF" driver), which is known to mishandle or
-     auto-rotate a per-page @page orientation switch mid-job (see ADR 0007's
-     addendum for sources). The issue explicitly asked not to break the
-     already-correct macOS behavior, so this isn't a blanket switch: two
-     strategies coexist, chosen at runtime (isLikelyWindows(), below) by
-     platform, not by feature-detecting the actual bug (there's no API for
-     that).
-       - .strategy-mixed (default, everywhere but Windows): unchanged from
-         before — each page's own @page controls its own physical size.
-       - .strategy-rotate (Windows only): declares exactly ONE physical
-         @page for the whole job (whichever orientation the majority of
-         this atlas's pages use), and for the minority orientation, rotates
-         that page's *content* 90° with a CSS transform instead of changing
-         the page's own size — the same trick a landscape-fed print job on
-         a portrait-only printer already relies on. The physical page never
-         changes size mid-job, so there's nothing for a print driver to get
-         wrong.
-     Both strategies share the same DOM shape (.print-page > .print-page-inner
-     > header/map/footer) built by preparePrintPages() below; only the CSS
-     driving .print-page/.print-page-inner's sizing differs. */
-  @page print-portrait { size: 210mm 297mm; margin: 0; }
-  @page print-landscape { size: 297mm 210mm; margin: 0; }
-  @page print-base-portrait { size: 210mm 297mm; margin: 0; }
-  @page print-base-landscape { size: 297mm 210mm; margin: 0; }
-
-  @media print {
-    body > *:not(#print-root) { display: none !important; }
-    #print-root { display: block; }
-
-    .print-page {
-      position: relative;
-      box-sizing: border-box;
-      break-after: page;
-      overflow: hidden;
-    }
-
-    /* strategy-mixed: .print-page itself carries this page's own @page. */
-    #print-root.strategy-mixed .print-page.portrait-page { page: print-portrait; width: 210mm; height: 297mm; }
-    #print-root.strategy-mixed .print-page.landscape-page { page: print-landscape; width: 297mm; height: 210mm; }
-    #print-root.strategy-mixed .print-page-inner { position: absolute; inset: 0; }
-
-    /* strategy-rotate: .print-page always carries the job's single base
-       @page; .print-page-inner carries this page's own logical size and,
-       when it disagrees with the base, is rotated 90° around its own
-       top-left corner (after offsetting left by the base page's own width)
-       so its rotated bounding box exactly fills .print-page instead — see
-       the ADR 0007 addendum for the derivation. */
-    #print-root.strategy-rotate.base-portrait .print-page { page: print-base-portrait; width: 210mm; height: 297mm; }
-    #print-root.strategy-rotate.base-landscape .print-page { page: print-base-landscape; width: 297mm; height: 210mm; }
-    #print-root.strategy-rotate .print-page-inner.portrait-page { width: 210mm; height: 297mm; }
-    #print-root.strategy-rotate .print-page-inner.landscape-page { width: 297mm; height: 210mm; }
-    #print-root.strategy-rotate .print-page-inner:not(.rotated) { position: absolute; top: 0; left: 0; }
-    #print-root.strategy-rotate.base-portrait .print-page-inner.rotated {
-      position: absolute; top: 0; left: 210mm;
-      transform-origin: 0 0; transform: rotate(90deg);
-    }
-    #print-root.strategy-rotate.base-landscape .print-page-inner.rotated {
-      position: absolute; top: 0; left: 297mm;
-      transform-origin: 0 0; transform: rotate(90deg);
-    }
-
-    /* Print margins (2026-08-31, uniform-15mm revision): the map frame keeps
-       nothing on top of its own content — title/index live in a header band
-       above the neatline, the scale bar lives in a footer band below it.
-       Numbers must match scripts/render/page.html's #map/#header/#footer. */
-    .print-page-inner .print-map {
-      position: absolute;
-      top: 15mm; left: 15mm; right: 15mm; bottom: 15mm;
-      box-sizing: border-box;
-      border: 0.75pt solid #000; /* neatline */
-      overflow: hidden;
-    }
-    /* object-fit: contain (not fill), issue #7: the overview page's
-       offscreen stage (renderScale, ADR 0009) is inflated per-axis by the
-       grid's own cols/rows, which only shares this box's fixed A4 aspect
-       ratio when cols === rows — any other grid shape hands this a
-       differently-proportioned snapshot. `fill` would stretch it to match,
-       visibly warping the map; `contain` letterboxes instead (a bit of
-       blank margin inside the neatline, never distorted content). Detail
-       pages have no renderScale, so their snapshot already matches this
-       box's aspect exactly — contain vs fill is a no-op for them. */
-    .print-page-inner .print-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-
-    .print-page-inner .print-header {
-      position: absolute;
-      top: 0; left: 15mm; right: 15mm; height: 15mm;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .print-page-inner .print-brand, .print-page-inner .print-ref {
-      font: bold 5mm/1 sans-serif; color: #222;
-    }
-    .print-page-inner .print-ref { text-align: right; }
-
-    /* Footer band (bottom margin): scale bar only — no compass (rotation is
-       locked in the picker UI, so north is always up and a compass would be
-       redundant; also "put nothing on top of the map itself", 2026-08-31). */
-    .print-page-inner .print-footer {
-      position: absolute;
-      bottom: 0; left: 15mm; right: 15mm; height: 15mm;
-      display: flex;
-      align-items: center;
-    }
-    .print-page-inner .print-footer .maplibregl-ctrl-scale { margin: 0; font-size: 3mm; }
-  }
+  /* Print CSS (named @page mixed/rotate strategy, header/footer bands,
+     object-fit:contain for the overview snapshot, etc.) used to live here —
+     it's now injected at runtime by AtlasControl (@dwg7/maplibre-gl-atlas),
+     the library this page's own print pipeline was extracted into (ADR
+     0012). See maplibre-gl-atlas's src/layout.ts / src/strategy.ts for the
+     generated CSS this replaces; #print-root (this page) became
+     #maplibre-gl-atlas-print-root (library-owned) as part of the same move. */
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "maplibre-gl": "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs"
+  }
+}
+</script>
 </head>
 <body>
 <div id="map"></div>
 <div id="grid-overlay"></div>
-<div id="print-root"></div>
 
 <div id="style-panel" class="panel">
   <h2>Style</h2>
@@ -338,10 +238,14 @@
 </div>
 
 <script type="module">
-import {
-  Map as MapLibreMap,
-  ScaleControl,
-} from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
+import { Map as MapLibreMap } from "https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs";
+// AtlasControl's build imports the bare specifier "maplibre-gl" (peer
+// dependency, not bundled) — the importmap in <head> resolves it to this
+// same unpkg URL, so both ends up sharing one module instance. Vendored
+// (ADR 0012) rather than imported from npm because @dwg7/maplibre-gl-atlas
+// isn't published there yet — switch to an unpkg import once it is, and
+// delete docs/vendor/ (see HANDOVER.md).
+import { AtlasControl } from "./vendor/maplibre-gl-atlas.js";
 
 const STARS = "https://stars.optgeo.org/style";
 
@@ -353,12 +257,6 @@ const CITIES = {
 
 // A4 aspect ratio (width/height), matching scripts/render/lib.js's viewportFor().
 const A4_ASPECT = { portrait: 210 / 297, landscape: 297 / 210 };
-
-// A4 at 96 CSS px/inch — matches scripts/render/lib.js's viewportFor(), used
-// here to size the offscreen staging map for "Print in Browser" (ADR 0007).
-function viewportPxFor(orientation) {
-  return orientation === "landscape" ? { width: 1123, height: 794 } : { width: 794, height: 1123 };
-}
 
 const STYLE_IDS = ["bvmap-dark", "positron", "std"];
 
@@ -702,12 +600,45 @@ function computePages() {
     // shrink the snapshot back down to the normal print footprint — the
     // same effect as the browser's own "Ctrl + -" page zoom (same tiles
     // fetched, just displayed smaller), scripted instead of relying on
-    // real browser zoom. Consumed by preparePrintPages() below and by
+    // real browser zoom. Consumed by computeSheets() below and by
     // scripts/render/page.html (via lib.js#renderPage's query string).
     renderScale: { x: state.cols, y: state.rows },
   };
 
   return [overviewPage, ...detailPages];
+}
+
+// Adapts computePages()'s output into AtlasSheet[] for AtlasControl (ADR
+// 0012) — used by the Print button only. Share/JSON keep using
+// computePages() directly and are untouched: scripts/render/atlas.js (the
+// GitHub Actions path, not yet migrated) reads that exact JSON shape from
+// docs/requests/*.json, so its schema can't change here.
+function computeSheets() {
+  return computePages().map((page) => {
+    const isIndex = !!page.grid;
+    return {
+      style: `${STARS}/${page.style}`,
+      bounds: page.bbox,
+      // Always matches state.orientation here, unlike computePages()'s own
+      // aspect-ratio-based auto-selection for the overview page — this
+      // supersedes D15's Windows-only workaround for issue #6 with a general
+      // fix (see adr/0012 and maplibre-gl-atlas's DECISIONS.md D11): once
+      // every sheet already shares one orientation, AtlasControl's
+      // strategy-rotate never has a minority sheet left to rotate.
+      orientation: isIndex ? state.orientation : page.orientation,
+      role: isIndex ? "index" : "detail",
+      headerLeft: page.title ? `Zukaku: ${page.title}` : "Zukaku",
+      headerRight: page.ref,
+      padding: page.padding,
+      renderScale: page.renderScale,
+      decorate: isIndex
+        ? (offscreenMap) => {
+            const labelScale = page.renderScale ? Math.max(page.renderScale.x, page.renderScale.y) : 1;
+            addOverviewGridLayers(offscreenMap, page.grid, labelScale);
+          }
+        : undefined,
+    };
+  });
 }
 
 function downloadJSON(filename, data) {
@@ -746,7 +677,7 @@ shareButton.addEventListener("click", () => {
   window.open(url, "_blank", "noopener");
 });
 
-// --- Print in Browser (ADR 0007) ---
+// --- Print in Browser (ADR 0007, now via AtlasControl — ADR 0012) ---
 // A second way to turn a `computePages()` array into a PDF, alongside the
 // GitHub Actions path (ADR 0006): render every page into a hidden print-only
 // document and call window.print(), letting the browser's own "Save as PDF"
@@ -754,180 +685,17 @@ shareButton.addEventListener("click", () => {
 // trade-off is the user has to be present to complete the print step, and
 // output quality depends on their own browser/OS — see ADR 0007.
 //
-// Windows Edge/Chrome route "print" through the OS print subsystem, which
-// mishandles a per-page @page orientation switch mid-job (issue #2,
-// 2026-08-31) — no runtime API can feature-detect that print-driver quirk
-// directly, so this falls back to a platform check. Only gates which print
-// CSS strategy is used (see above); doesn't affect anything else.
-function isLikelyWindows() {
-  if (navigator.userAgentData && navigator.userAgentData.platform) {
-    return navigator.userAgentData.platform === "Windows";
-  }
-  return /Windows/i.test(navigator.userAgent);
-}
-
-async function preparePrintPages(pages) {
-  const printRoot = document.getElementById("print-root");
-  printRoot.innerHTML = "";
-
-  // strategy-mixed (default) reproduces the exact, already-verified-good
-  // macOS Brave behavior unchanged. strategy-rotate (Windows only) declares
-  // one physical @page for the whole job and rotates the minority
-  // orientation's content instead — see the print CSS above.
-  const useRotateStrategy = isLikelyWindows();
-
-  // The overview page normally picks whichever orientation best fits the
-  // whole grid's aspect ratio (computePages()), independent of the detail
-  // pages' own orientation — efficient paper use, but it means the overview
-  // disagrees with every detail page whenever the grid is wider or taller
-  // than a single cell (e.g. any 1-row or 1-column grid). Under
-  // strategy-rotate that disagreement isn't just cosmetic: the outvoted
-  // overview page gets its content rotated 90° to fit the job's single
-  // physical orientation, so it has to be read with the sheet turned
-  // sideways relative to every other page — reported as "印刷が乱れる"
-  // (issue #6, 2026-09-01) even though nothing was actually corrupted. Since
-  // rotating even a single mismatched page is the exact thing strategy-rotate
-  // exists to hide from the print driver, avoid causing one in the first
-  // place here: pin the overview to the same orientation as the detail
-  // pages so every page already agrees before the majority vote below runs.
-  // strategy-mixed is unaffected (each page keeps its own true @page, so an
-  // efficiently-framed overview costs nothing there).
-  if (useRotateStrategy) {
-    for (const spec of pages) {
-      if (spec.grid) spec.orientation = state.orientation;
-    }
-  }
-
-  const landscapeCount = pages.filter((p) => p.orientation === "landscape").length;
-  const baseOrientation = landscapeCount > pages.length - landscapeCount ? "landscape" : "portrait";
-  printRoot.className = useRotateStrategy ? `strategy-rotate base-${baseOrientation}` : "strategy-mixed";
-
-  for (const spec of pages) {
-    const orientation = spec.orientation === "landscape" ? "landscape" : "portrait";
-    const pxSize = viewportPxFor(orientation);
-    // Zoom-level shift (ADR 0009): stage the overview in a bigger-than-usual
-    // container so it fits its (much larger) bbox at close to the same zoom
-    // a detail page would — see the renderScale comment in computePages().
-    // The final display size is unaffected: .print-map's CSS box stays
-    // fixed and the snapshot <img> is scaled (object-fit: contain, issue #7)
-    // to fit inside it without distorting the map when the grid isn't
-    // square (renderScale.x !== renderScale.y skews this container's own
-    // aspect ratio away from the print box's fixed A4 shape).
-    if (spec.renderScale) {
-      pxSize.width *= spec.renderScale.x;
-      pxSize.height *= spec.renderScale.y;
-    }
-
-    // Offscreen staging container: MapLibre needs a real laid-out element to
-    // size its canvas against, so this can't be display:none. Hidden via
-    // opacity + pointer-events rather than parked at a large negative
-    // offset (issue #4, 2026-08-31) — a real browser's print pipeline (as
-    // opposed to Playwright's page.pdf(), a different code path — see
-    // ADR 0009) produced RGB-fringed, garbled scale-bar text specifically
-    // for the overview page, whose staging container is the one that gets
-    // dramatically larger (renderScale). Keeping every staging container
-    // near the normal document flow removes that variable regardless of
-    // size. Removed as soon as this page's snapshot is taken.
-    const stage = document.createElement("div");
-    stage.style.cssText = `position:fixed; top:0; left:0; opacity:0; pointer-events:none; width:${pxSize.width}px; height:${pxSize.height}px;`;
-    document.body.appendChild(stage);
-
-    const pageMap = new MapLibreMap({
-      container: stage,
-      style: `${STARS}/${spec.style}`,
-      bounds: [
-        [spec.bbox[0], spec.bbox[1]],
-        [spec.bbox[2], spec.bbox[3]],
-      ],
-      fitBoundsOptions: { padding: spec.padding || 0, animate: false },
-      projection: "mercator", // ADR 0004: no 3D, same as scripts/render/page.html
-      interactive: false,
-      attributionControl: false,
-      fadeDuration: 0,
-    });
-    // Scale bar only — no compass. Rotation is locked (state, above) so
-    // north is always up, making a compass redundant; and "put nothing on
-    // top of the map itself" (2026-08-31) extends to this control too, so
-    // it's relocated into a footer band below the neatline, not left
-    // floating over the map image.
-    pageMap.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
-
-    await new Promise((resolve, reject) => {
-      pageMap.on("error", (e) => reject(e.error || e));
-      pageMap.on("load", () => {
-        pageMap.setTerrain(null);
-        // Grid labels are drawn into the same oversized offscreen canvas as
-        // the map itself (renderScale, ADR 0009), so they get shrunk right
-        // back down along with it — compensate by the same factor so they
-        // land at their intended size once printed (issue #5, 2026-09-01).
-        const labelScale = spec.renderScale ? Math.max(spec.renderScale.x, spec.renderScale.y) : 1;
-        if (spec.grid) addOverviewGridLayers(pageMap, spec.grid, labelScale);
-      });
-      pageMap.once("idle", resolve);
-    });
-
-    // Same WebGL-canvas-doesn't-survive-print workaround as
-    // scripts/render/page.html (ADR 0002) — applies here too, since this is
-    // the same underlying Chromium print pipeline, just invoked via
-    // window.print() instead of Playwright's page.pdf().
-    const dataUrl = pageMap.getCanvas().toDataURL("image/png");
-    // The scale control's own markup (not user-supplied, safe to carry over
-    // as static HTML) — the live container it depended on for positioning
-    // is gone once this map is removed, so it's re-homed in .print-footer.
-    const scaleEl = pageMap.getContainer().querySelector(".maplibregl-ctrl-scale");
-    const scaleHTML = scaleEl ? scaleEl.outerHTML : "";
-
-    pageMap.remove(); // free the WebGL context before starting the next page
-    stage.remove();
-
-    const section = document.createElement("section");
-    section.className = `print-page ${orientation}-page`;
-
-    // Inner box carries this page's own logical orientation (issue #2,
-    // 2026-08-31). Under strategy-rotate it's rotated via CSS instead of
-    // the physical page being rotated, when it disagrees with the job's
-    // base orientation; under strategy-mixed the "rotated" class is simply
-    // never added, and .print-page itself (not .print-page-inner) carries
-    // the per-page @page. See the print CSS above.
-    const rotated = useRotateStrategy && orientation !== baseOrientation;
-    const inner = document.createElement("div");
-    inner.className = `print-page-inner ${orientation}-page${rotated ? " rotated" : ""}`;
-
-    // Header band (above the neatline): title left, grid reference right —
-    // matches scripts/render/page.html's #header.
-    const header = document.createElement("div");
-    header.className = "print-header";
-    const brand = document.createElement("div");
-    brand.className = "print-brand";
-    brand.textContent = spec.title ? `Zukaku: ${spec.title}` : "Zukaku";
-    header.appendChild(brand);
-    if (spec.ref) {
-      const ref = document.createElement("div");
-      ref.className = "print-ref";
-      ref.textContent = spec.ref;
-      header.appendChild(ref);
-    }
-    inner.appendChild(header);
-
-    // Map box: neatline + snapshot only, nothing else on top of it.
-    const mapBox = document.createElement("div");
-    mapBox.className = "print-map";
-    const img = document.createElement("img");
-    img.src = dataUrl;
-    mapBox.appendChild(img);
-    inner.appendChild(mapBox);
-
-    // Footer band (below the neatline): scale bar — matches
-    // scripts/render/page.html's #footer.
-    const footer = document.createElement("div");
-    footer.className = "print-footer";
-    footer.innerHTML = scaleHTML;
-    inner.appendChild(footer);
-
-    section.appendChild(inner);
-    printRoot.appendChild(section);
-  }
-}
+// The actual snapshot/CSS/window.print() machinery (formerly
+// preparePrintPages()/isLikelyWindows() here) now lives in AtlasControl —
+// this page only supplies computeSheets() and drives its own #print-btn.
+// showButton:false because zukaku already has that button; no confirm/
+// review() step because the grid's own ×/+ toggles (Save Paper, ADR 0008)
+// already are the "decide what prints" step (see adr/0012).
+const atlasControl = new AtlasControl({
+  sheets: computeSheets,
+  showButton: false,
+});
+map.addControl(atlasControl, "top-right");
 
 // Same overview-page grid overlay as scripts/render/page.html: draw each
 // detail page's cell as a rectangle + grid-reference label.
@@ -1022,13 +790,11 @@ function addOverviewGridLayers(pageMap, cells, labelScale) {
 
 const printButton = document.getElementById("print-btn");
 printButton.addEventListener("click", async () => {
-  const pages = computePages();
   const original = printButton.textContent;
-  printButton.textContent = `Rendering (${pages.length} pages)…`;
+  printButton.textContent = "Rendering…";
   printButton.disabled = true;
   try {
-    await preparePrintPages(pages);
-    window.print();
+    await atlasControl.print();
   } catch (err) {
     console.error(err);
     alert(`Print preparation failed: ${err.message || err}`);

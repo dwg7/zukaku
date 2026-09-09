@@ -219,3 +219,23 @@ issue #6の修正とは独立に、ADR 0009導入時点(2026-08-31)から存在�
 常に正しい縦横比で描画され、はみ出す分は余白として吸収されるようにした
 (`renderScale`自体は変更なし)。両レンダリング経路でPlaywright検証済み。
 → [adr/0009](adr/0009-overview-zoom-level-shift.md)の追記セクション参照
+
+## D17: 「Print in Browser」を`@dwg7/maplibre-gl-atlas`ライブラリの消費に切り替える(D15を上書き)
+
+[dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8)、[maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
+のPR 1(ライブラリ抽出)完了を受け、`docs/index.html`の`preparePrintPages()`・
+印刷用CSS・オフスクリーンスナップショットを`AtlasControl`の呼び出しに
+置き換えた。`computePages()`(bbox算出・Save Paper、Share/JSON/Actions向け)
+は無変更のまま残し、その返り値を`AtlasSheet[]`へ変換する`computeSheets()`
+(Print専用の新規アダプタ)を追加する形にした——`scripts/render/atlas.js`
+(PR 3で移行予定)が読む`docs/requests/*.json`のスキーマに一切影響しないため。
+
+**副次的な決定として、概要ページの向きを常に`state.orientation`に一致させる
+よう変更した**(Print経由の描画にのみ適用、`computePages()`自体の返り値は
+無変更)。これはmaplibre-gl-atlas側でこの挙動をhfuさんが選んだ決定
+(同リポジトリDECISIONS.md D11)をzukaku本体にも適用したもので、**D15
+(issue #6、Windows専用の概要ページ向き固定という回避策)を実質的に不要にする**
+——概要ページが最初から全ページと同じ向きになるため、D15が対処していた
+「少数派として回転される」場面自体が起きなくなる。D15の本文は撤回・書き換え
+せず経緯として残す(D3→D5と同じ方針)。
+→ [adr/0012](adr/0012-consume-maplibre-gl-atlas-library.md)

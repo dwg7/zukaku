@@ -2,10 +2,14 @@
 
 zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)向け。
 
-## 現状(2026-09-03時点) — MVPは実際にデプロイ・動作確認済み
+## 現状(2026-09-10時点) — MVPは実際にデプロイ・動作確認済み、印刷パイプラインの外部ライブラリ化が進行中
 
 調査・設計から実装、そして**実際のGitHub上へのデプロイ・動作確認まで完了**。
-ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
+ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。2026-09-10、
+zukakuの印刷パイプラインを[dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
+という汎用ライブラリへ切り出す3PR計画([dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8))の
+PR 2(`docs/index.html`の消費側切り替え)まで完了。詳細は[ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md)と
+下の該当節、残タスクは「次にやること」参照。
 
 - スコープ・技術方針は [CLAUDE.md](CLAUDE.md) 参照。zukaku自身はMartin等のタイル
   サーバーを持たず、stars.optgeo.orgのデータをHeadless Chromium(Playwright)+
@@ -139,17 +143,71 @@ ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。
 - 同時実行のrace(2つのリクエストが近接してmainにpushされると`git push`が競合)
   → `concurrency`グループで直列化 + push直前に`git pull --rebase`。
 
+### `docs/index.html`の「Print in Browser」を`@dwg7/maplibre-gl-atlas`の消費に切り替え(2026-09-10)
+
+[dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8)の3PR計画のうち、
+PR 1([dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
+本体の構築)に続くPR 2を実施。詳細は[ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md)・
+[DECISIONS.md D17](DECISIONS.md)参照。
+
+- `preparePrintPages()`・印刷用CSS(`@page`混在戦略・ヘッダー/フッター帯)・
+  `viewportPxFor()`・`isLikelyWindows()`をすべて削除し、`AtlasControl`
+  (`showButton:false`、確認ダイアログなしで`atlasControl.print()`を直接呼ぶ)
+  に置き換えた。`addOverviewGridLayers()`は`AtlasSheet.decorate`フックとして
+  そのまま残した(ロジック無変更)。
+- **`computePages()`(bbox算出・Save Paper、Share/JSON/Actions向け)は完全に
+  無変更のまま維持**。新規`computeSheets()`がその返り値を`AtlasSheet[]`へ
+  変換する薄いアダプタとして「Print」ボタン専用に追加された——
+  `scripts/render/atlas.js`(PR 3で移行予定、まだ未着手)が読む
+  `docs/requests/*.json`のスキーマには一切影響しない。
+- **概要ページの向きを、Print経由の描画に限り常に`state.orientation`に
+  一致させるよう変更**(`computePages()`自身のアスペクト比自動選択は
+  Share/JSON向けに無変更のまま)。これによりD15(issue #6、Windows専用の
+  概要ページ向き固定という回避策)が実質的に不要になった——概要ページが
+  最初から全ページと同じ向きになるため、`strategy-rotate`の「少数派を
+  回転」ロジックがそもそも発動する場面が無くなる。
+- npm未公開のため、`docs/vendor/maplibre-gl-atlas.js`(+`.js.map`)に
+  ビルド成果物を手動配置する暫定措置(maplibre-gl-atlas自身のデモと同じ
+  パターン)。npm公開後はunpkg importに切り替え予定。
+
+**実機検証(Claude Browserプレビューペイン)**: `window.print`をスタブして
+検証。(1) 1行×1列・positron・帯広で印刷し、概要ページに描画された
+グリッド矩形+「A1」ラベル(白背景付き)を画像として確認、スケールバーの
+幅も概要/詳細で異なる妥当な値(30m/91.66px、20m/69.9px)であることを確認。
+(2) 1行×3列・portrait・中央セルをSave Paperで除外して印刷し、生成された
+3シート(概要/A1/A3、A2は正しく欠番)が**すべて`portrait-page`**になる
+ことを確認(修正前なら概要だけ`landscape-page`になっていたはずの
+ケース)。(3) 同じ状態で「JSON」ボタンから`computePages()`の生データを
+確認し、概要ページの`orientation`が引き続き`"landscape"`(Share/Actions向け
+ロジックは無変更)であることも確認——Print経由とShare/JSON経由で異なる
+向き判定が共存し、互いに影響しないことを実証した。(4) `showButton:false`
+のため地図右上に空のコントロール箱が現れないことも確認。実際のユーザー
+操作(印刷ダイアログの完了まで)はまだ確認していない。
+
 ## 次にやること
 
 MVPとして把握していたタスク・実ブラウザ確認・unopengis/7への案内issue
 ([UNopenGIS/7#989](https://github.com/UNopenGIS/7/issues/989)、#986への回答として投稿済み)は
-すべて完了。残っているのは優先度の低いものだけ:
+すべて完了。[dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8)の
+3PR計画はPR 1・PR 2完了、残るはPR 3のみ:
 
+- **[dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)PR 3**:
+  `scripts/render/page.html`(Playwright/GitHub Actions経路)を
+  `AtlasControl.prepare()`の消費に切り替える。`print()`ではなく
+  `prepare()`を使う(`window.print()`は呼ばれず、Playwright側の
+  `page.pdf()`が実際のトリガーになるため)。`docs/index.html`側は
+  [ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md)で完了済み。
+- `@dwg7/maplibre-gl-atlas`のnpm公開(`NPM_TOKEN`設定、`v0.1.0`タグ)後、
+  `docs/index.html`のimportをunpkg経由に切り替え、`docs/vendor/`を削除する
+  (現在は暫定的にビルド成果物を手動配置——maplibre-gl-atlas自身のHANDOVER.md
+  参照)。
+- `docs/index.html`の「Print in Browser」(現在は`AtlasControl`経由)は
+  Claude Browserプレビューでのクリックスルー検証まで完了だが、実際の
+  ユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
+  未確認。ADR 0012適用前からの既知の制約(旧ADR 0007の記述)がそのまま
+  引き継がれている。
 - [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の残タスク(フロントエンド
   一本化、PDFファイルサイズ最適化)。
-- [ADR 0007](adr/0007-client-side-print-mode.md)の「Print in Browser」は実機検証済みだが、
-  実際のユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
-  Playwrightでの間接検証のみ。人間が実際にクリックしての確認はまだ。
 - issue #2〜#7、すべて対応・クローズ済み。#4・#2・#6は実機確認で解消を確認済み、
   #5・#7はPlaywright検証のみで完了扱い(印刷ドライバ等プラットフォーム固有の話
   ではない一般的な修正のため実機再確認は必須としなかった)。現時点でopenな
