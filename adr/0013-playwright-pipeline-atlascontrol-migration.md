@@ -1,6 +1,6 @@
-# ADR 0013: Playwright経路(`scripts/render/`)を`AtlasControl.prepare()`へ移行する(提案)
+# ADR 0013: Playwright経路(`scripts/render/`)を`AtlasControl.prepare()`へ移行する
 
-- ステータス: 提案中(未実装・未承認)
+- ステータス: 採用・実装済み(2026-09-10、hfuさんの承認を得て実装。追記参照)
 - 日付: 2026-09-10
 
 ## コンテキスト
@@ -143,3 +143,75 @@ Playwrightの`page.pdf()`は明示的な`width`/`height`/`format`オプション
 - [ADR 0007](0007-client-side-print-mode.md) — `page.pdf()`とChromiumネイティブ印刷パイプラインの関係についての元々の洞察
 - [ADR 0012](0012-consume-maplibre-gl-atlas-library.md) — 同じ3PR計画のPR 2(完了済み)
 - [dwg7/maplibre-gl-atlas HANDOVER.md](https://github.com/dwg7/maplibre-gl-atlas/blob/main/HANDOVER.md) — PR 3の当初の想定(`prepare()`を使う、程度の粒度だった)
+
+## 追記(2026-09-10): 実装完了、実バグ2件を発見・修正
+
+hfuさんの承認(「ADR 0013の設計で進めていいよ」)を得て、上記「提案する設計」
+のとおり実装した。
+
+- 新規`scripts/render/atlas-page.html`が旧`scripts/render/page.html`
+  (削除)を置き換え。ネットワーク不要なソースなしスタイルでホスト用の
+  地図を1つ構築し、`AtlasControl`(`showButton:false`)を追加、
+  `docs/requests/*.json`と同じ形のページ配列を`AtlasSheet[]`に変換して
+  `prepare()`を呼ぶ。`addOverviewGridLayers()`は旧`page.html`と同一の
+  ロジックを`decorate`フックとして移植(コピー、共有モジュール化はしない
+  ——`docs/index.html`ももう一つの独立した消費者であり、両者は別々に
+  `AtlasSheet`を組み立てるのが自然、という判断)。
+- `lib.js`の`renderPage()`/`pdfDimsFor()`を`renderAtlas()`に置き換え。
+  1つの`BrowserContext`で`atlas-page.html`に1回だけナビゲートし、
+  `prepare()`完了を待って`page.pdf()`を1回だけ呼ぶ。`viewportFor()`は
+  `grid.js`(現在未使用の遺物、本移行の対象外)がまだ参照しているため残置。
+- `atlas.js`(ページごとのループ+`pdf-lib`結合)と`render.js`(単ページCLI)を
+  どちらも`renderAtlas()`呼び出しに統合。`pdf-lib`を依存から削除
+  (`package.json`)。`.github/workflows/atlas.yml`の呼び出し方
+  (`node scripts/render/atlas.js --pages ... --out ...`)・
+  `docs/requests/*.json`のスキーマはいずれも無変更。
+
+### 検討事項1(`page.pdf()`のCSS `@page`対応)の答え: 対応するが要オプトイン
+
+想定どおりPlaywrightの`page.pdf()`は`window.print()`と同じChromium印刷
+パイプラインを通るが、**`preferCSSPageSize: true`を明示的に渡さない限り
+`@page`ルールを完全に無視し、Letter判(612×792pt)にフォールバックする**
+——実測(生成PDFの`mediabox`を確認)で気づいた。`renderAtlas()`の
+`page.pdf()`呼び出しに追加して解消した。
+
+### 新たに見つかった実バグ: landscapeシートが最後に来ると空白ページが増える
+
+上記の修正後、**単一シート(概要ページの無い1ページだけのアトラス)を
+landscapeで印刷すると、内容の無い2ページ目が生成される**ことを発見した。
+実験(二分探索)で切り分けた結果:
+
+- 原因はChromiumのprint-to-PDF固有の丸め込み——CSSの`page:`プロパティで
+  ある名前付き`@page`が割り当てられた要素の高さが、その物理ページの
+  宣言高さと**厳密に一致**すると、ごくわずかに内容が次ページへ漏れる。
+  0.1mm不足させても再現し、1mm不足させると解消することを確認した。
+  同じ形の`@page`宣言でもportraitでは再現しなかった——landscape方向の
+  `@page`に固有の挙動。
+- 症状は「単一シート」に限らない——**印刷対象の最後のシートが
+  landscapeであれば常に起こりうる**(2枚とも同じlandscapeのアトラスでも
+  実際に再現・修正確認した)。zukakuの通常のアトラスは概要ページが必ず
+  先頭に来るため、「グリッドの向きを`landscape`に選ぶだけ」で最後の
+  詳細ページがlandscapeになり、条件を満たしてしまう——**一部の
+  ユーザー操作で偶然踏むような特殊なケースではなく、一般的な不具合**
+  だった。
+- **この不具合は[ADR 0012](0012-consume-maplibre-gl-atlas-library.md)
+  (`docs/index.html`側)にも当てはまっていた**——ADR 0012の実機検証は
+  portraitでしか行っておらず、見逃していた。今回landscapeの単一シートを
+  たまたま検証対象にしたことで発覚した。
+- **修正**: maplibre-gl-atlas本体の`src/strategy.ts`
+  (`generateStrategyCss()`)で、landscapeページの高さを
+  `calc(<portrait幅>mm - 1mm)`に変更(`strategy-mixed`・
+  `strategy-rotate`の両方)。1mmは15mmという既定マージンに対して
+  視覚的に無視できる差。`tests/strategy.test.ts`に回帰テストを追加。
+
+**実機検証(Playwright直接実行)**: 修正前後で、(1)単一landscapeシート
+(`render.js`)、(2)2ページとも同じlandscapeのアトラス(`atlas.js`)、
+(3)`docs/index.html`のPrint in Browserを1×1 landscapeグリッドで実行
+(Playwrightで`window.print`をスタブしつつ同じページに対して直接
+`page.pdf({preferCSSPageSize:true})`を呼ぶ手法)——いずれも修正前は
+実際に不要な2ページ目が生成され、修正後(`docs/vendor/`再ビルド後)は
+正しいページ数になることを確認した。3ページ混在アトラス(`sample-atlas.json`)・
+本番リクエストJSON(2×2グリッド+概要ページ、5ページ)でも回帰が無いことを
+確認済み。実際のGitHub Actions上での試験実行、実ブラウザでの
+「印刷ダイアログを開いて保存」までの確認はまだ行っていない
+(HANDOVER.md「次にやること」参照)。

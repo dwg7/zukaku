@@ -1,4 +1,5 @@
-// Single-page verification CLI for ADR 0002.
+// Single-page verification CLI for ADR 0002/0013 — a one-page atlas is just
+// renderAtlas() called with a one-element page array.
 //
 // Usage:
 //   node scripts/render/render.js --style positron --lon 139.767 --lat 35.681 \
@@ -8,7 +9,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { chromium } from "playwright";
-import { repoRoot, startStaticServer, renderPage } from "./lib.js";
+import { repoRoot, startStaticServer, renderAtlas } from "./lib.js";
 
 function parseArgs(argv) {
   const out = {};
@@ -32,7 +33,6 @@ async function main() {
     orientation: args.orientation === "landscape" ? "landscape" : "portrait",
     bearing: args.bearing ? Number(args.bearing) : undefined,
     pitch: args.pitch ? Number(args.pitch) : undefined,
-    deviceScaleFactor: args.scale ? Number(args.scale) : undefined,
   };
   if (args.bbox) {
     spec.bbox = args.bbox.split(",").map(Number);
@@ -41,12 +41,13 @@ async function main() {
     spec.lat = args.lat ? Number(args.lat) : undefined;
     spec.zoom = args.zoom ? Number(args.zoom) : undefined;
   }
+  const deviceScaleFactor = args.scale ? Number(args.scale) : undefined;
 
   const server = await startStaticServer(repoRoot);
   const port = server.address().port;
   const browser = await chromium.launch();
 
-  const { bytes, idleMs, totalMs } = await renderPage(browser, port, spec);
+  const { bytes, idleMs, totalMs } = await renderAtlas(browser, port, [spec], { deviceScaleFactor });
   await writeFile(outPath, bytes);
 
   await browser.close();

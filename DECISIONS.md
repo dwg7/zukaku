@@ -239,3 +239,33 @@ issue #6の修正とは独立に、ADR 0009導入時点(2026-08-31)から存在�
 「少数派として回転される」場面自体が起きなくなる。D15の本文は撤回・書き換え
 せず経緯として残す(D3→D5と同じ方針)。
 → [adr/0012](adr/0012-consume-maplibre-gl-atlas-library.md)
+
+## D18: `scripts/render/`を`AtlasControl.prepare()`に切り替え(ADR 0013採用・実装)
+
+hfuさんの承認を得て、提案段階だったADR 0013を実装した。`scripts/render/lib.js`の
+`renderPage()`(1ページ=1つのPlaywright `BrowserContext`+個別`page.pdf()`を
+`pdf-lib`で結合)を`renderAtlas()`(1つの`BrowserContext`で全シートを
+1ページに構築し`page.pdf()`を1回だけ呼ぶ)に置き換え、`atlas.js`・
+`render.js`の両方をこれに統合、`pdf-lib`を依存から削除した。
+新規`scripts/render/atlas-page.html`が旧`page.html`を置き換える。
+
+実装過程で2件の実バグを発見・修正した:
+
+1. **Playwrightの`page.pdf()`は`preferCSSPageSize: true`を明示しない限り
+   `@page`ルールを無視しLetter判にフォールバックする**——ADR 0013が
+   「要検証」としていた前提(`page.pdf()`は`window.print()`と同じ
+   Chromium印刷パイプラインを通るはず)は正しかったが、オプトインが
+   必要だった。`renderAtlas()`に追加して解消。
+2. **単一のlandscapeシート、または印刷対象の最後のシートがlandscapeの
+   場合に、内容の無い2ページ目が生成される**——Chromiumのprint-to-PDF
+   固有の丸め込みで、`page:`が割り当てられた要素の高さがその物理ページの
+   宣言高さと厳密に一致すると、ごくわずかに次ページへ内容が漏れる
+   (実測で0.1mm不足では再現、1mm不足で解消)。これは`docs/index.html`
+   経由の「Print in Browser」(D17)にも当てはまる一般的な不具合
+   ——D17の実機検証がportraitでしか行われておらず見逃されていた。
+   maplibre-gl-atlas本体の`src/strategy.ts`を修正(landscapeページの
+   高さを`calc(<w>mm - 1mm)`に)し、両経路で修正を確認した。
+
+`docs/requests/*.json`のスキーマ・`.github/workflows/atlas.yml`の呼び出し
+方(`node scripts/render/atlas.js --pages ... --out ...`)はいずれも無変更。
+→ [adr/0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)

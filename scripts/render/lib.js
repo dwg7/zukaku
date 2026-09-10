@@ -53,70 +53,69 @@ export function viewportFor(orientation) {
     : { width: A4_PORTRAIT_PX.width, height: A4_PORTRAIT_PX.height };
 }
 
-export function pdfDimsFor(orientation) {
-  return orientation === "landscape"
-    ? { width: "297mm", height: "210mm" }
-    : { width: "210mm", height: "297mm" };
-}
-
 /**
- * Render one atlas page to PDF bytes using an already-launched Playwright
- * browser and an already-running static server (both are reused across pages
- * by atlas.js to avoid the cost of relaunching Chromium per page).
+ * Renders an entire atlas (all pages) to a single combined PDF, using
+ * `AtlasControl.prepare()` (scripts/render/atlas-page.html) instead of the
+ * old one-`BrowserContext`-and-`page.pdf()`-per-page + `pdf-lib` merge
+ * approach — see ADR 0013 for why that couldn't just be a mechanical
+ * swap. One `BrowserContext` navigates once to atlas-page.html, which builds
+ * every sheet into one print DOM (named `@page` rules, mixing portrait and
+ * landscape sheets in one job — same CSS strategy as docs/index.html's
+ * "Print in Browser", ADR 0007/0012), then `page.pdf()` is called exactly
+ * once with no explicit width/height/format — the injected `@page` rules
+ * decide each page's physical size, the same way they do in a real
+ * browser's print pipeline (Playwright's `page.pdf()` goes through the same
+ * underlying Chromium print-to-PDF code as `window.print()`).
  *
  * @param {import('playwright').Browser} browser
  * @param {number} port - port of the static server serving `repoRoot`
- * @param {object} spec - { style, bbox: [w,s,e,n] } OR { style, lon, lat, zoom },
- *   plus optional { orientation, bearing, pitch, deviceScaleFactor }
+ * @param {object[]} pages - docs/requests/*.json shape (computePages()'s
+ *   output, unchanged by ADR 0012): each entry is
+ *   { style, bbox: [w,s,e,n] } OR { style, lon, lat, zoom }, plus optional
+ *   { orientation, bearing, pitch, ref, grid, title, padding, renderScale }
+ * @param {object} [opts]
+ * @param {number} [opts.deviceScaleFactor] - default 3, matches the old
+ *   per-page pipeline's default raster resolution
  * @returns {Promise<{bytes: Uint8Array, idleMs: number, totalMs: number}>}
  */
-export async function renderPage(browser, port, spec) {
-  const orientation = spec.orientation === "landscape" ? "landscape" : "portrait";
-  const deviceScaleFactor = spec.deviceScaleFactor ?? 3;
-  const viewport = viewportFor(orientation);
-
-  const context = await browser.newContext({ viewport, deviceScaleFactor });
+export async function renderAtlas(browser, port, pages, opts = {}) {
+  const deviceScaleFactor = opts.deviceScaleFactor ?? 3;
+  const context = await browser.newContext({ viewport: { width: 1200, height: 1600 }, deviceScaleFactor });
   const page = await context.newPage();
 
-  const qs = new URLSearchParams({ style: spec.style || "positron" });
-  if (spec.bbox) {
-    qs.set("bbox", spec.bbox.join(","));
-  } else {
-    qs.set("lon", String(spec.lon ?? 139.767));
-    qs.set("lat", String(spec.lat ?? 35.681));
-    qs.set("zoom", String(spec.zoom ?? 14));
-  }
-  if (spec.bearing) qs.set("bearing", String(spec.bearing));
-  if (spec.pitch) qs.set("pitch", String(spec.pitch));
-  if (spec.ref) qs.set("ref", spec.ref);
-  if (spec.grid) qs.set("grid", JSON.stringify(spec.grid));
-  if (spec.title) qs.set("title", spec.title);
-  if (spec.padding) qs.set("padding", String(spec.padding));
-  // Zoom-level shift (ADR 0009): overview-only, see page.html and
-  // docs/index.html's computePages() for what this does.
-  if (spec.renderScale) qs.set("renderScale", JSON.stringify(spec.renderScale));
+  // Playwright's own mechanism for handing a page complex data before its
+  // scripts run — not a query string, which has practical length limits a
+  // multi-cell grid's JSON can exceed.
+  await page.addInitScript((pagesData) => {
+    window.__zukakuPages = pagesData;
+  }, pages);
 
-  const url = `http://127.0.0.1:${port}/scripts/render/page.html?${qs}`;
+  const url = `http://127.0.0.1:${port}/scripts/render/atlas-page.html`;
 
   const t0 = Date.now();
   await page.goto(url, { waitUntil: "load" });
+  // Every sheet is snapshotted sequentially inside one prepare() call (same
+  // total work as the old per-page loop, just not split across separate
+  // browser contexts) — scale the timeout with page count instead of a flat
+  // budget sized for one page.
   await page.waitForFunction(
     () => window.__zukakuReady === true || window.__zukakuError,
     null,
-    { timeout: 30000 }
+    { timeout: Math.max(30000, pages.length * 20000) }
   );
   const mapError = await page.evaluate(() => window.__zukakuError);
   if (mapError) {
     await context.close();
-    throw new Error(`MapLibre GL JS reported an error: ${mapError}`);
+    throw new Error(`AtlasControl reported an error: ${mapError}`);
   }
   const idleMs = Date.now() - t0;
 
-  const bytes = await page.pdf({
-    ...pdfDimsFor(orientation),
-    printBackground: true,
-    margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
-  });
+  // preferCSSPageSize is required — without it, Playwright's page.pdf()
+  // ignores @page size entirely and defaults to Letter format, silently
+  // discarding the mixed portrait/landscape @page rules AtlasControl
+  // injected (confirmed empirically: omitting this produced uniform
+  // 612x792pt/792x612pt Letter pages instead of A4).
+  const bytes = await page.pdf({ printBackground: true, preferCSSPageSize: true });
   const totalMs = Date.now() - t0;
 
   await context.close();

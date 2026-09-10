@@ -102,8 +102,12 @@ Docker化の障害がありません。
   当面選択できるスタイルは `bvmap-dark` と `positron` の2つ(CLAUDE.md 3節参照)。
 - **範囲指定UI**: MapLibre GL JS ベースのWebアプリ(対話モード)。ヘッドレスなページ
   レンダリングと同じフロントエンドコードを使い回せる可能性が高い(モードの違いのみ)。
-- **PDF合成**: Playwrightの `page.pdf()` で1ページずつ書き出し、pdf-lib で全ページを
-  マージする案が第一候補(Node.jsエコシステムで完結するため)。まだ確定ではない。
+- **PDF合成**: 当初はPlaywrightの `page.pdf()` で1ページずつ書き出し、
+  pdf-lib で全ページをマージする案だったが、[@dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
+  ([ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md))への
+  移行により、1つのブラウザページに全シートを構築し`page.pdf()`を1回だけ
+  呼ぶ方式(named `@page`混在戦略でCSS側が向きを混在させる)に変更した。
+  `pdf-lib`は依存から削除済み。
 - **実行環境**: Docker を基本とする。Playwright公式Dockerイメージを起点にする想定。
   zukaku は画面表示を必要としないため、kaga0と違ってDocker化の障害がない。
 
@@ -155,7 +159,8 @@ dwg7組織の他プロジェクト(kaga0など)にならい、以下の4ファ�
   [ADR 0003](adr/0003-docs-reserved-for-github-pages.md) で `adr/`(ADR)と
   `docs/`(GitHub Pages予定の範囲指定UI)に分離済み。
 - **レンダリングパイプラインの実機検証がほぼ完了**: [scripts/render/](scripts/render/)
-  (単ページ・複数ページのpdf-libマージ・bbox→camera変換)と[Dockerfile](Dockerfile)
+  (bbox→camera変換。ページ結合は当初pdf-libマージだったが、[ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)で
+  `AtlasControl.prepare()`+単一`page.pdf()`呼び出しに置き換え済み)と[Dockerfile](Dockerfile)
   (Playwright公式イメージ、Xvfb不要を確認)まで一通り動作確認済み。terrainの
   常時無効化(ADR 0004)も実装済み。重要な落とし穴として「`page.pdf()`は生きたWebGL
   キャンバスを含められない、`canvas.toDataURL()`での画像化が必須」を発見・実装済み

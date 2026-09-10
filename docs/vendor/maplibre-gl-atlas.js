@@ -1,10 +1,10 @@
-var P = Object.defineProperty;
-var N = (n, t, e) => t in n ? P(n, t, { enumerable: !0, configurable: !0, writable: !0, value: e }) : n[t] = e;
-var p = (n, t, e) => N(n, typeof t != "symbol" ? t + "" : t, e);
-import { Map as _, ScaleControl as A, LngLatBounds as T } from "maplibre-gl";
-const k = { width: 210, height: 297 }, u = 15;
+var R = Object.defineProperty;
+var A = (n, t, e) => t in n ? R(n, t, { enumerable: !0, configurable: !0, writable: !0, value: e }) : n[t] = e;
+var p = (n, t, e) => A(n, typeof t != "symbol" ? t + "" : t, e);
+import { Map as N, ScaleControl as k, LngLatBounds as _ } from "maplibre-gl";
+const T = { width: 210, height: 297 }, u = 15;
 function $(n) {
-  return n ?? k;
+  return n ?? T;
 }
 function z(n) {
   return n == null ? { top: u, right: u, bottom: u, left: u } : typeof n == "number" ? { top: n, right: n, bottom: n, left: n } : {
@@ -14,7 +14,7 @@ function z(n) {
     left: n.left ?? u
   };
 }
-function B() {
+function D() {
   return `
 #maplibre-gl-atlas-print-root { display: none; }
 @media print {
@@ -26,10 +26,20 @@ function B() {
     break-after: page;
     overflow: hidden;
   }
+  /* An atlas with exactly one sheet (no index/overview page, or every other
+     sheet excluded by the caller) would otherwise get a trailing blank page
+     — break-after still forces a break after the last .print-page even
+     though nothing follows it. Confirmed empirically via a headless
+     Chromium print-to-PDF run (dwg7/zukaku's scripts/render/render.js CLI,
+     ADR 0013): a single-sheet atlas came out as a 2-page PDF, page 2 blank.
+     Multi-sheet atlases were unaffected — this only bites the last page. */
+  #maplibre-gl-atlas-print-root .print-page:last-child {
+    break-after: auto;
+  }
 }
 `;
 }
-function D(n) {
+function B(n) {
   const t = z(n), e = t.top / 3, i = t.top / 3, o = t.bottom / 5;
   return `
 @media print {
@@ -85,13 +95,13 @@ function I(n) {
   };
 }
 function H(n, t) {
-  const { width: e, height: i } = I($(n));
+  const { width: e, height: i } = I($(n)), o = `calc(${e}mm - 1mm)`;
   return t === "mixed" ? `
 @page atlas-portrait { size: ${e}mm ${i}mm; margin: 0; }
 @page atlas-landscape { size: ${i}mm ${e}mm; margin: 0; }
 @media print {
   #maplibre-gl-atlas-print-root.strategy-mixed .print-page.portrait-page { page: atlas-portrait; width: ${e}mm; height: ${i}mm; }
-  #maplibre-gl-atlas-print-root.strategy-mixed .print-page.landscape-page { page: atlas-landscape; width: ${i}mm; height: ${e}mm; }
+  #maplibre-gl-atlas-print-root.strategy-mixed .print-page.landscape-page { page: atlas-landscape; width: ${i}mm; height: ${o}; }
   #maplibre-gl-atlas-print-root.strategy-mixed .print-page-inner { position: absolute; inset: 0; }
 }
 ` : `
@@ -99,7 +109,7 @@ function H(n, t) {
 @page atlas-base-landscape { size: ${i}mm ${e}mm; margin: 0; }
 @media print {
   #maplibre-gl-atlas-print-root.strategy-rotate.base-portrait .print-page { page: atlas-base-portrait; width: ${e}mm; height: ${i}mm; }
-  #maplibre-gl-atlas-print-root.strategy-rotate.base-landscape .print-page { page: atlas-base-landscape; width: ${i}mm; height: ${e}mm; }
+  #maplibre-gl-atlas-print-root.strategy-rotate.base-landscape .print-page { page: atlas-base-landscape; width: ${i}mm; height: ${o}; }
   #maplibre-gl-atlas-print-root.strategy-rotate .print-page-inner.portrait-page { width: ${e}mm; height: ${i}mm; }
   #maplibre-gl-atlas-print-root.strategy-rotate .print-page-inner.landscape-page { width: ${i}mm; height: ${e}mm; }
   #maplibre-gl-atlas-print-root.strategy-rotate .print-page-inner:not(.rotated) { position: absolute; top: 0; left: 0; }
@@ -142,8 +152,8 @@ async function J(n, t) {
     fadeDuration: 0
   };
   n.bounds ? (a.bounds = n.bounds, a.fitBoundsOptions = { padding: n.padding ?? 0, animate: !1 }) : (a.center = n.center, a.zoom = n.zoom);
-  const r = new _(a);
-  r.addControl(new A({ maxWidth: 100, unit: "metric" }), "bottom-left");
+  const r = new N(a);
+  r.addControl(new k({ maxWidth: 100, unit: "metric" }), "bottom-left");
   try {
     await new Promise((l, m) => {
       r.on("error", (g) => m(g.error ?? g)), r.on("load", () => {
@@ -299,7 +309,7 @@ function X(n, t) {
 }
 function L(n) {
   if (!n) return null;
-  const t = T.convert(n), e = t.getWest(), i = t.getSouth(), o = t.getEast(), a = t.getNorth();
+  const t = _.convert(n), e = t.getWest(), i = t.getSouth(), o = t.getEast(), a = t.getNorth();
   return [
     [e, a],
     [o, a],
@@ -449,12 +459,12 @@ class it {
     var e, i;
     try {
       await ((i = (e = this.options).onBeforePrint) == null ? void 0 : i.call(e)), V(t);
-      const o = C(this.options.strategy), a = t.map(R), r = F(a);
+      const o = C(this.options.strategy), a = t.map(P), r = F(a);
       this.options.injectStyles && this.injectStyles(o);
       const h = this.getOrCreatePrintRoot();
       h.innerHTML = "", h.className = o === "rotate" ? `strategy-rotate base-${r}` : "strategy-mixed";
       for (const s of t) {
-        const d = R(s), { dataUrl: l, scaleHtml: m } = await J(s, this.options.pageSize), g = o === "rotate" && d !== r;
+        const d = P(s), { dataUrl: l, scaleHtml: m } = await J(s, this.options.pageSize), g = o === "rotate" && d !== r;
         h.appendChild(tt(s, d, g, l, m));
       }
     } catch (o) {
@@ -467,9 +477,9 @@ class it {
   }
   injectStyles(t) {
     const e = [
-      B(),
+      D(),
       H(this.options.pageSize, t),
-      D(this.options.margin),
+      B(this.options.margin),
       Q()
     ].join(`
 `);
@@ -485,7 +495,7 @@ class it {
     this.options.onError ? this.options.onError(t) : console.error("[maplibre-gl-atlas]", t);
   }
 }
-function R(n) {
+function P(n) {
   return n.orientation === "landscape" ? "landscape" : "portrait";
 }
 function V(n) {

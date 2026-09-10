@@ -1,14 +1,14 @@
-// Multi-page atlas builder for ADR 0002: renders each page defined in a JSON
-// config through the same headless-Chromium pipeline as render.js, then merges
-// all pages into a single PDF with pdf-lib.
+// Multi-page atlas builder. Renders every page defined in a JSON config in
+// one Playwright browser context via AtlasControl.prepare() + a single
+// page.pdf() call (ADR 0013) — no per-page pdf-lib merge (superseded
+// approach, see git history for the old design).
 //
 // Usage:
 //   node scripts/render/atlas.js --pages scripts/render/sample-atlas.json --out atlas.pdf
 
 import { writeFile, readFile } from "node:fs/promises";
 import { chromium } from "playwright";
-import { PDFDocument } from "pdf-lib";
-import { repoRoot, startStaticServer, renderPage } from "./lib.js";
+import { repoRoot, startStaticServer, renderAtlas } from "./lib.js";
 
 function parseArgs(argv) {
   const out = {};
@@ -39,28 +39,16 @@ async function main() {
   const port = server.address().port;
   const browser = await chromium.launch();
 
-  const atlas = await PDFDocument.create();
-  const timings = [];
-  const t0 = Date.now();
-
-  for (const [i, spec] of pages.entries()) {
-    const { bytes, idleMs, totalMs } = await renderPage(browser, port, spec);
-    const src = await PDFDocument.load(bytes);
-    const [copiedPage] = await atlas.copyPages(src, [0]);
-    atlas.addPage(copiedPage);
-    timings.push({ page: i + 1, style: spec.style, orientation: spec.orientation || "portrait", idleMs, totalMs });
-    console.error(`page ${i + 1}/${pages.length} done (${totalMs}ms)`);
-  }
+  const { bytes, idleMs, totalMs } = await renderAtlas(browser, port, pages);
 
   await browser.close();
   server.close();
 
-  const mergedBytes = await atlas.save();
-  await writeFile(outPath, mergedBytes);
+  await writeFile(outPath, bytes);
 
   console.log(
     JSON.stringify(
-      { pageCount: pages.length, totalMs: Date.now() - t0, outPath, timings },
+      { pageCount: pages.length, idleMs, totalMs, outPath },
       null,
       2
     )

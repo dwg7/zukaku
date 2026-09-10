@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>zukaku atlas render</title>
+<!-- maplibre-gl-atlas's build imports the bare specifier "maplibre-gl" (peer
+     dependency, not bundled) — resolved here to the same npm-installed copy
+     scripts/render/ already uses (node_modules/, not unpkg — this page never
+     leaves the local static server). -->
+<script type="importmap">
+{
+  "imports": {
+    "maplibre-gl": "../../node_modules/maplibre-gl/dist/maplibre-gl.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<!-- A live host map for AtlasControl.onAdd() — never itself rendered into
+     the atlas. Every actual sheet is snapshotted from its own offscreen
+     MapLibre instance, entirely independent of this one (see
+     maplibre-gl-atlas's src/snapshot.ts). Kept tiny and given a style with
+     no sources so it needs no network fetch and no "load" wait. -->
+<div id="map" style="width:10px;height:10px;"></div>
+<script type="module">
+  import { Map as MapLibreMap } from "maplibre-gl";
+  // Vendored (ADR 0012/0013): @dwg7/maplibre-gl-atlas isn't published to npm
+  // yet, so scripts/render/ reuses the same build docs/index.html vendors —
+  // both are served by the same static server (lib.js#startStaticServer
+  // serves the whole repo root), so no separate copy is needed here. Switch
+  // to a real npm import once it's published; see zukaku HANDOVER.md.
+  import { AtlasControl } from "../../docs/vendor/maplibre-gl-atlas.js";
+
+  const STARS = "https://stars.optgeo.org/style";
+
+  window.__zukakuReady = false;
+  window.__zukakuError = null;
+
+  // Playwright injects the request's page-spec array here (lib.js#renderAtlas,
+  // via page.addInitScript()) before this script runs — not a query string,
+  // since a large grid's JSON can exceed a URL's practical length.
+  const pages = window.__zukakuPages || [];
+
+  // Same overview-page grid overlay as docs/index.html's addOverviewGridLayers()
+  // (ADR 0005/0008/0009) — ported verbatim, this is the decorate() hook's
+  // whole job. Kept as a plain copy rather than a shared import: this file
+  // and docs/index.html are two different consumers of AtlasControl, not a
+  // shared module, matching the "sheets/decorate are the only extension
+  // points, the library owns no grid concept" design (maplibre-gl-atlas
+  // CLAUDE.md).
+  function addOverviewGridLayers(pageMap, cells, labelScale) {
+    const polygons = {
+      type: "FeatureCollection",
+      features: cells.map((c) => ({
+        type: "Feature",
+        properties: { excluded: !!c.excluded },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [c.bbox[0], c.bbox[3]],
+              [c.bbox[2], c.bbox[3]],
+              [c.bbox[2], c.bbox[1]],
+              [c.bbox[0], c.bbox[1]],
+              [c.bbox[0], c.bbox[3]],
+            ],
+          ],
+        },
+      })),
+    };
+    const points = {
+      type: "FeatureCollection",
+      features: cells
+        .filter((c) => !c.excluded)
+        .map((c) => ({
+          type: "Feature",
+          properties: { label: c.label },
+          geometry: {
+            type: "Point",
+            coordinates: [(c.bbox[0] + c.bbox[2]) / 2, (c.bbox[1] + c.bbox[3]) / 2],
+          },
+        })),
+    };
+    pageMap.addSource("zukaku-grid-lines", { type: "geojson", data: polygons });
+    pageMap.addLayer({
+      id: "zukaku-grid-excluded-fill",
+      type: "fill",
+      source: "zukaku-grid-lines",
+      filter: ["==", ["get", "excluded"], true],
+      paint: { "fill-color": "#000", "fill-opacity": 0.15 },
+    });
+    pageMap.addLayer({
+      id: "zukaku-grid-lines",
+      type: "line",
+      source: "zukaku-grid-lines",
+      paint: { "line-color": "#000", "line-width": 1.5 },
+    });
+    pageMap.addSource("zukaku-grid-labels", { type: "geojson", data: points });
+    const bg = document.createElement("canvas");
+    bg.width = 8;
+    bg.height = 8;
+    bg.getContext("2d").fillStyle = "#fff";
+    bg.getContext("2d").fillRect(0, 0, 8, 8);
+    pageMap.addImage("zukaku-label-bg", bg.getContext("2d").getImageData(0, 0, 8, 8));
+    pageMap.addLayer({
+      id: "zukaku-grid-labels",
+      type: "symbol",
+      source: "zukaku-grid-labels",
+      layout: {
+        "text-field": ["get", "label"],
+        "text-size": 28 * labelScale,
+        "text-font": ["Noto Sans Bold"],
+        "icon-image": "zukaku-label-bg",
+        "icon-text-fit": "both",
+        "icon-text-fit-padding": [2, 4, 2, 4].map((n) => n * labelScale),
+        "icon-allow-overlap": true,
+        "text-allow-overlap": true,
+      },
+      paint: { "text-color": "#000" },
+    });
+  }
+
+  // Adapts one docs/requests/*.json page spec (computePages()'s output
+  // shape, unchanged by ADR 0012) into an AtlasSheet. Deliberately does NOT
+  // force the overview page's orientation to match the others (unlike
+  // docs/index.html's computeSheets() — ADR 0012/D17): that override existed
+  // only to avoid a Windows-only print-driver rotation quirk (ADR 0007) that
+  // never applies here in the first place — GitHub Actions runs on Linux, so
+  // resolveStrategy("auto") always picks "mixed", under which every sheet
+  // simply carries its own true @page and an orientation mismatch is a
+  // complete non-issue. Each page's `orientation` is taken as-is from the
+  // request JSON, exactly as it was under the old per-page render pipeline.
+  function toSheet(page) {
+    const isIndex = !!page.grid;
+    const sheet = {
+      style: `${STARS}/${page.style || "positron"}`,
+      orientation: page.orientation === "landscape" ? "landscape" : "portrait",
+      role: isIndex ? "index" : "detail",
+      headerLeft: page.title ? `Zukaku: ${page.title}` : "Zukaku",
+      headerRight: page.ref,
+      padding: page.padding,
+      bearing: page.bearing,
+      pitch: page.pitch,
+      renderScale: page.renderScale,
+    };
+    if (page.bbox) {
+      sheet.bounds = [
+        [page.bbox[0], page.bbox[1]],
+        [page.bbox[2], page.bbox[3]],
+      ];
+    } else {
+      sheet.center = [page.lon ?? 139.767, page.lat ?? 35.681];
+      sheet.zoom = page.zoom ?? 14;
+    }
+    if (isIndex) {
+      sheet.decorate = (offscreenMap) => {
+        const labelScale = page.renderScale ? Math.max(page.renderScale.x, page.renderScale.y) : 1;
+        addOverviewGridLayers(offscreenMap, page.grid, labelScale);
+      };
+    }
+    return sheet;
+  }
+
+  const map = new MapLibreMap({
+    container: "map",
+    // No sources — needs no network fetch, never waited on ("load").
+    style: { version: 8, sources: {}, layers: [] },
+    center: [0, 0],
+    zoom: 0,
+    interactive: false,
+    attributionControl: false,
+  });
+
+  const atlasControl = new AtlasControl({
+    sheets: () => pages.map(toSheet),
+    showButton: false,
+  });
+  map.addControl(atlasControl);
+
+  atlasControl
+    .prepare()
+    .then(() => {
+      window.__zukakuReady = true;
+    })
+    .catch((err) => {
+      window.__zukakuError = String((err && err.message) || err);
+    });
+</script>
+</body>
+</html>

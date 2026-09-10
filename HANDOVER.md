@@ -2,14 +2,18 @@
 
 zukakuの現在の状態。次にこれを引き継ぐ人(人間でもAIでも)向け。
 
-## 現状(2026-09-10時点) — MVPは実際にデプロイ・動作確認済み、印刷パイプラインの外部ライブラリ化が進行中
+## 現状(2026-09-10時点) — MVPは実際にデプロイ・動作確認済み、印刷パイプラインの外部ライブラリ化が完了
 
 調査・設計から実装、そして**実際のGitHub上へのデプロイ・動作確認まで完了**。
 ADR 0001〜0006 の経緯は [DECISIONS.md](DECISIONS.md) を参照。2026-09-10、
 zukakuの印刷パイプラインを[dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
-という汎用ライブラリへ切り出す3PR計画([dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8))の
-PR 2(`docs/index.html`の消費側切り替え)まで完了。詳細は[ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md)と
-下の該当節、残タスクは「次にやること」参照。
+という汎用ライブラリへ切り出す3PR計画([dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8))を
+**PR 1〜3すべて完了**——`docs/index.html`([ADR 0012](adr/0012-consume-maplibre-gl-atlas-library.md))・
+`scripts/render/`([ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md))
+の両方がこのライブラリの消費に切り替わった。この過程で、単一landscapeシート
+(または最後のシートがlandscape)を含むアトラスが不要な空白ページ付きで
+出力される実バグをmaplibre-gl-atlas本体に発見・修正した(下の該当節参照)。
+詳細・残タスクは下の該当節と「次にやること」参照。
 
 - スコープ・技術方針は [CLAUDE.md](CLAUDE.md) 参照。zukaku自身はMartin等のタイル
   サーバーを持たず、stars.optgeo.orgのデータをHeadless Chromium(Playwright)+
@@ -22,11 +26,17 @@ PR 2(`docs/index.html`の消費側切り替え)まで完了。詳細は[ADR 0012
 
 ### レンダリングパイプライン([scripts/render/](scripts/render/)、[Dockerfile](Dockerfile))
 
-- 単ページ・複数ページ結合(pdf-lib)・bbox→camera変換(MapLibre GL JSの
-  `bounds`/`fitBoundsOptions`)・Docker実行、いずれも実機検証済み。詳細は
-  [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)参照。
+- bbox→camera変換(MapLibre GL JSの`bounds`/`fitBoundsOptions`)・Docker実行、
+  実機検証済み。詳細は[ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)参照。
+  **2026-09-10、ページ結合方式を刷新**([ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)、
+  下の該当節参照): 旧来の「1ページ=1つの独立したPlaywright `BrowserContext`+
+  個別`page.pdf()`を`pdf-lib`で結合」から、`@dwg7/maplibre-gl-atlas`の
+  `AtlasControl.prepare()`で全シートを1つのページに構築し、`page.pdf()`を
+  1回だけ呼ぶ方式に置き換えた。`pdf-lib`は依存から削除済み。
 - **重要な落とし穴**: Playwrightの`page.pdf()`は生きたWebGLキャンバスを含められない。
-  `canvas.toDataURL()`で画像化し`<img>`に差し替える必要がある([page.html](scripts/render/page.html))。
+  `canvas.toDataURL()`で画像化し`<img>`に差し替える必要がある
+  ([scripts/render/atlas-page.html](scripts/render/atlas-page.html)——
+  この処理自体は`AtlasControl`内部が担う)。
 - maplibre-gl v6はESM専用。`<script type="module">`+`import { Map } from ".../maplibre-gl.mjs"`。
 
 ### 範囲指定UI([docs/index.html](docs/index.html)) — 公開中: https://dwg7.github.io/zukaku/
@@ -184,36 +194,86 @@ PR 1([dwg7/maplibre-gl-atlas](https://github.com/dwg7/maplibre-gl-atlas)
 のため地図右上に空のコントロール箱が現れないことも確認。実際のユーザー
 操作(印刷ダイアログの完了まで)はまだ確認していない。
 
+### `scripts/render/`(Playwright/GitHub Actions経路)を`AtlasControl.prepare()`に切り替え(2026-09-10、PR 3完了)
+
+hfuさんの承認を得て[ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)
+の設計どおり実装した——ステータスは提案中から採用・実装済みに更新済み。
+
+- 新規[scripts/render/atlas-page.html](scripts/render/atlas-page.html)が
+  `scripts/render/page.html`を置き換えた(削除済み)。対話的な地図を1つ
+  ホストし(ネットワーク不要のソースなしスタイル)、`AtlasControl`
+  (`showButton:false`)を追加、`docs/requests/*.json`のページ配列を
+  `AtlasSheet[]`に変換して`prepare()`を1回呼ぶ。`addOverviewGridLayers()`は
+  旧`page.html`と同じロジックのまま`decorate`フックとして移植。
+- `lib.js`の`renderPage()`/`pdfDimsFor()`を削除し、新規`renderAtlas()`に
+  置き換えた:1つの`BrowserContext`で`atlas-page.html`に1回だけナビゲート、
+  `prepare()`完了を待って`page.pdf()`を1回だけ呼ぶ(`preferCSSPageSize:
+  true`が必須——後述)。`viewportFor()`は`grid.js`(未使用の遺物)がまだ
+  参照しているため残置。
+- `atlas.js`(ページごとのループ+`pdf-lib`結合)と`render.js`
+  (単ページCLI)をどちらも`renderAtlas()`呼び出しに統合。`render.js`は
+  1要素配列を渡すだけの薄いラッパーになった。`pdf-lib`を依存から削除
+  (`package.json`)。
+- **見つかった実バグ1(Playwright固有)**: `page.pdf()`は明示的な
+  `width`/`height`/`format`を渡さなければCSSの`@page`ルールに従うと
+  想定していたが、実際には**`preferCSSPageSize: true`を明示しない限り
+  `@page`を完全に無視してLetter判(612×792pt)にフォールバックする**
+  ——実測で確認するまで気づかなかった(ADR 0013の検討事項1で「要検証」と
+  していた点)。`renderAtlas()`に追加して解消。
+- **見つかった実バグ2(ライブラリ本体、両経路に影響)**: 修正後、単一
+  シート(概要ページの無い1ページだけのアトラス)をlandscapeで印刷すると、
+  内容の無い2ページ目が生成される不具合を発見。原因はChromiumの
+  print-to-PDF固有の丸め込み——`page: <landscape名前付きページ>`を持つ
+  要素の高さがその物理ページの宣言高さと厳密に一致すると、ごくわずかに
+  次ページへ内容が漏れる(0.1mm不足では再現、1mm不足で解消することを
+  二分探索で確認)。**単一シートに限らず、印刷対象の最後のシートが
+  landscapeであれば常に起こりうる**——概要ページが必ず先頭に来る
+  zukakuの通常のアトラスでも、`orientation`を"landscape"に選ぶだけで
+  発生する一般的な不具合だった。maplibre-gl-atlas本体の
+  `src/strategy.ts`を修正(landscapeページの高さを`calc(<w>mm - 1mm)`に、
+  `strategy-mixed`/`strategy-rotate`両方)し、`docs/vendor/`を再ビルド・
+  再配置。修正前後をPlaywrightで実測し、単一landscapeシート・
+  2枚ともlandscapeのアトラス・`docs/index.html`側のPrint in Browser
+  経由(1×1 landscapeグリッド)のいずれも、修正後は正しいページ数に
+  なることを確認した——**この不具合はPR 2で切り替えた`docs/index.html`
+  側にも(landscapeを選んだ場合)当てはまっていたが、PR 2の実機検証では
+  portraitしか試しておらず見逃していた**。
+
+**実機検証(Playwright直接実行、Claude Browserではなくnode CLIとして)**:
+`node scripts/render/atlas.js --pages scripts/render/sample-atlas.json`
+(3ページ、向き混在)・実際の本番リクエストJSON(`docs/requests/`、
+2×2グリッド+概要ページ、`renderScale`・グリッドラベル付き、5ページ)の
+両方を実行し、生成PDFのページ数・向き・寸法(A4、210×297mm)をpypdf/
+PyMuPDFで検証、概要ページのグリッド矩形・ラベル・スケールバーを画像として
+目視確認した。単一landscapeページ・2ページ全landscapeのケースも別途検証
+(上記バグ2)。`docs/index.html`の「Print in Browser」がPlaywright越しに
+`window.print`をスタブして同様に検証できることも確認した(実ブラウザでの
+確認は引き続き未実施)。
+
 ## 次にやること
 
 MVPとして把握していたタスク・実ブラウザ確認・unopengis/7への案内issue
 ([UNopenGIS/7#989](https://github.com/UNopenGIS/7/issues/989)、#986への回答として投稿済み)は
 すべて完了。[dwg7/zukaku#8](https://github.com/dwg7/zukaku/issues/8)の
-3PR計画はPR 1・PR 2完了、残るはPR 3のみ:
+3PR計画は**PR 1・PR 2・PR 3すべて完了**——`@dwg7/maplibre-gl-atlas`への
+移行そのものは完了した。残っているのは検証・公開作業のみ:
 
-- **PR 3(`scripts/render/`のPlaywright/GitHub Actions経路)は設計調査のみ
-  完了、実装は保留・hfuさんの承認待ち**——[ADR 0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)
-  (提案中)参照。`docs/index.html`(PR 2)と違い、単なる置き換えでは
-  済まない: 現行の`scripts/render/lib.js#renderPage()`は「1ページ=1つの
-  独立したPlaywright `BrowserContext`+個別`page.pdf()`」を`atlas.js`が
-  `pdf-lib`で結合する設計だが、`AtlasControl.prepare()`は「1つのページに
-  全シートを構築し、`page.pdf()`を1回だけ呼ぶ」ことを前提にしている——
-  前提そのものが異なるため、`atlas.js`/`lib.js`/`page.html`の実質的な
-  書き直しになる。これは実際にGitHub Actions上で稼働し
-  `docs/responses/*.pdf`をpublicに生成している本番パイプラインであり、
-  CLAUDE.md 7節の「大きな設計判断は実装より先にADR案を提示し、承認を
-  得てから着手する」に該当すると判断し、ADR 0013に設計案・検討事項・
-  検証計画をまとめた上で実装を止めている。次に着手する場合はADR 0013の
-  承認から。
 - `@dwg7/maplibre-gl-atlas`のnpm公開(`NPM_TOKEN`設定、`v0.1.0`タグ)後、
-  `docs/index.html`のimportをunpkg経由に切り替え、`docs/vendor/`を削除する
-  (現在は暫定的にビルド成果物を手動配置——maplibre-gl-atlas自身のHANDOVER.md
-  参照)。
+  `docs/index.html`・`scripts/render/atlas-page.html`のimportをunpkg経由に
+  切り替え、`docs/vendor/`を削除する(現在は暫定的にビルド成果物を手動配置
+  ——maplibre-gl-atlas自身のHANDOVER.md参照)。
 - `docs/index.html`の「Print in Browser」(現在は`AtlasControl`経由)は
-  Claude Browserプレビューでのクリックスルー検証まで完了だが、実際の
-  ユーザー操作(ボタンクリック→ブラウザの印刷ダイアログ→PDFとして保存)は
-  未確認。ADR 0012適用前からの既知の制約(旧ADR 0007の記述)がそのまま
-  引き継がれている。
+  Claude Browserプレビューでのクリックスルー検証・Playwright直接実行での
+  検証まで完了だが、実際のユーザー操作(ボタンクリック→ブラウザの印刷
+  ダイアログ→PDFとして保存)は未確認。ADR 0012適用前からの既知の制約
+  (旧ADR 0007の記述)がそのまま引き継がれている。
+- `scripts/render/`(GitHub Actions経路)はローカルでのPlaywright実行検証
+  まで完了だが、実際にGitHub Actions上で(テスト用のリクエストJSONを
+  push/PRして)試験実行し、既存の`docs/responses/*.pdf`と同等の結果に
+  なることはまだ確認していない——本番の`atlas.yml`ワークフロー自体は
+  `node scripts/render/atlas.js --pages ... --out ...`という呼び出し方を
+  変えていないため影響は無いはずだが、実際の一度の試験実行で最終確認する
+  こと。
 - [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の残タスク(フロントエンド
   一本化、PDFファイルサイズ最適化)。
 - issue #2〜#7、すべて対応・クローズ済み。#4・#2・#6は実機確認で解消を確認済み、
@@ -231,7 +291,8 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 
 ## 実装詳細
 
-- `scripts/render/` — ヘッドレスPDF生成(Node.js、Playwright、pdf-lib)。
+- `scripts/render/` — ヘッドレスPDF生成(Node.js、Playwright、
+  `@dwg7/maplibre-gl-atlas`の`AtlasControl.prepare()`、ADR 0013)。
   `npm install` 後、`node scripts/render/atlas.js --pages <config.json> --out atlas.pdf`。
 - `docs/` — GitHub Pagesが配信するもの全て: `index.html`(範囲指定UI、GitHub Actions
   経由の「Make Atlas」とブラウザ内完結の「Print in Browser」の両方を持つ)、
