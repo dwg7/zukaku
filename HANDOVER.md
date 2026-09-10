@@ -267,13 +267,15 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
   検証まで完了だが、実際のユーザー操作(ボタンクリック→ブラウザの印刷
   ダイアログ→PDFとして保存)は未確認。ADR 0012適用前からの既知の制約
   (旧ADR 0007の記述)がそのまま引き継がれている。
-- `scripts/render/`(GitHub Actions経路)はローカルでのPlaywright実行検証
-  まで完了だが、実際にGitHub Actions上で(テスト用のリクエストJSONを
-  push/PRして)試験実行し、既存の`docs/responses/*.pdf`と同等の結果に
-  なることはまだ確認していない——本番の`atlas.yml`ワークフロー自体は
-  `node scripts/render/atlas.js --pages ... --out ...`という呼び出し方を
-  変えていないため影響は無いはずだが、実際の一度の試験実行で最終確認する
-  こと。
+- **`scripts/render/`(GitHub Actions経路)の実機試験実行、完了**
+  (2026-09-10)。テスト用リクエスト([PR #10](https://github.com/dwg7/zukaku/pull/10)、
+  概要+A1detail、grid/renderScale/decorate経路を含む2ページ)をpull_request
+  イベント(アーティファクトのみ)とpushイベント(`docs/responses/`への
+  自動コミット)の両方で実行し、成功を確認した。生成PDFはpypdf/PyMuPDFで
+  ページ数・寸法(A4)・内容(グリッド・ラベル・スケールバー)を検証済み。
+  PRはマージ済み、`docs/responses/atlas-pr3-verification-test.pdf`として
+  GitHub Pagesから閲覧可能(`docs/requests/`は「安価だが貴重ではない」
+  運用方針のため削除せず残置)。
 - [ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md)の残タスク(フロントエンド
   一本化、PDFファイルサイズ最適化)。
 - issue #2〜#7、すべて対応・クローズ済み。#4・#2・#6は実機確認で解消を確認済み、

@@ -212,6 +212,13 @@ landscapeで印刷すると、内容の無い2ページ目が生成される**�
 実際に不要な2ページ目が生成され、修正後(`docs/vendor/`再ビルド後)は
 正しいページ数になることを確認した。3ページ混在アトラス(`sample-atlas.json`)・
 本番リクエストJSON(2×2グリッド+概要ページ、5ページ)でも回帰が無いことを
-確認済み。実際のGitHub Actions上での試験実行、実ブラウザでの
+確認済み。
+
+**追記(2026-09-10、GitHub Actions実機試験)**: [PR #10](https://github.com/dwg7/zukaku/pull/10)で
+テスト用リクエスト(概要+A1detail、grid/renderScale/decorate経路を含む
+2ページ)を実際にpush・PRの両方で実行し、`atlas.yml`ワークフローが
+成功することを確認した——`pull_request`イベント(アーティファクトのみ)・
+`push`イベント(`docs/responses/`への自動コミット)の両方を検証、PRは
+マージ済み。生成されたPDFの内容もpypdf/PyMuPDFで確認済み。実ブラウザでの
 「印刷ダイアログを開いて保存」までの確認はまだ行っていない
 (HANDOVER.md「次にやること」参照)。
