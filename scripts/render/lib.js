@@ -101,7 +101,7 @@ export async function renderAtlas(browser, port, pages, opts = {}) {
   await page.waitForFunction(
     () => window.__zukakuReady === true || window.__zukakuError,
     null,
-    { timeout: Math.max(30000, pages.length * 20000) }
+    { timeout: Math.max(30000, pages.length * 30000) }
   );
   const mapError = await page.evaluate(() => window.__zukakuError);
   if (mapError) {

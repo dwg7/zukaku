@@ -48,10 +48,11 @@ Headless Chromium + MapLibre GL JS の構成に切り替えました。
 - **範囲指定UI**: Field Papers の「地図上でアトラスの範囲(bbox・用紙サイズ・縮尺)を
   指定するUI」を移植する方針。詳細設計はこれから(要ADR)。
 - **選択可能なスタイル(当面)**: [stars.optgeo.org](https://stars.optgeo.org)(hfu/stars)
-  がホストするスタイルのうち `bvmap-dark`・`positron`・`std` の3つに限定してよい。
+  がホストするスタイルのうち `bvmap-starlight`・`positron`・`std` の3つに限定してよい
+  (`bvmap-dark`は2026-10-03に`bvmap-starlight`へ置き換え、[ADR 0014](adr/0014-bvmap-detail-boost.md))。
   スタイル追加はstars側へのPR(hfu/starsのCONTRIBUTING.md参照)が必要になる想定
   (実際に[hfu/stars#6](https://github.com/hfu/stars/pull/6)でstdを追加した実績あり)。
-  **`bvmap-dark`は国土地理院(GSI)の`optimal_bvmap`データに基づく日本国内専用**
+  **`bvmap-starlight`(旧`bvmap-dark`と同じレイヤー構成・色とスプライトのみ違う)は国土地理院(GSI)の`optimal_bvmap`データに基づく日本国内専用**
   (実機確認済み、2026-08-30: ビエンチャンで表示すると完全に空白になる)。
   `positron`はグローバル(OSM planet)データで、日本国外にも対応。
   **`std`は国土地理院の「標準地図」ラスタタイル(256px、z5〜18)で、こちらも日本国内
@@ -99,7 +100,7 @@ Docker化の障害がありません。
   canvasスクリーンショット)で書き出す。zukaku自身はMartin等のタイルサーバーを持たない。
 - **地図データの取得元**: [stars.optgeo.org](https://stars.optgeo.org) のスタイルJSON・
   ベクタタイル・スプライト・グリフをブラウザから直接fetchする(CORS対応済み・実機確認済み)。
-  当面選択できるスタイルは `bvmap-dark` と `positron` の2つ(CLAUDE.md 3節参照)。
+  当面選択できるスタイルは `bvmap-starlight`・`positron`・`std` の3つ(CLAUDE.md 3節参照)。
 - **範囲指定UI**: MapLibre GL JS ベースのWebアプリ(対話モード)。ヘッドレスなページ
   レンダリングと同じフロントエンドコードを使い回せる可能性が高い(モードの違いのみ)。
 - **PDF合成**: 当初はPlaywrightの `page.pdf()` で1ページずつ書き出し、

@@ -269,3 +269,19 @@ hfuさんの承認を得て、提案段階だったADR 0013を実装した。`sc
 `docs/requests/*.json`のスキーマ・`.github/workflows/atlas.yml`の呼び出し
 方(`node scripts/render/atlas.js --pages ... --out ...`)はいずれも無変更。
 → [adr/0013](adr/0013-playwright-pipeline-atlascontrol-migration.md)
+
+## D19: bvmapの印刷を深いズームのタイルで描く(詳細ブースト)、`bvmap-dark`を`bvmap-starlight`に置き換える
+
+現地調査で「bvmapの印刷は建物が乏しく物足りない」との指摘。原因はデータ側で、
+bvmapのタイルは縮尺帯ごとに作られており(z11–13は20万分の1帯)、**建物は
+z14以上のタイルにしか存在しない**。ページがz12前後になる印刷では建物が出ない。
+`renderScale`(ADR 0009、コンテナをk倍にして縮小)を詳細ページにも自動で
+付け、z14の帯のタイルを取って描く(k=2^ceil(14−z0)、上限4)。**文字補正は
+しない**(注記の字高は約1mm、実測で許容と判断)。対象はbvmap系のみで、
+概要ページは従来どおり。あわせて、ピッカーの`bvmap-dark`を、レイヤー構成が
+同一の`bvmap-starlight`に置き換えた(共有URLの`style=bvmap-dark`は読み替え)。
+実装は`docs/index.html`の`computePages()`だけで、リクエストJSONのスキーマ・
+`scripts/render/`・ライブラリはいずれも無変更。なお、当初「キャンバス上限
+4096pxで解像度が落ちる」と見込んでライブラリで上限を上げる案を試したが、
+実測の取り違えによる誤りで、上限は変更していない(経緯はADR本文に記録)。
+→ [adr/0014](adr/0014-bvmap-detail-boost.md)

@@ -180,7 +180,7 @@
 
 <div id="style-panel" class="panel">
   <h2>Style</h2>
-  <button data-style="bvmap-dark" aria-pressed="false">bvmap-dark</button>
+  <button data-style="bvmap-starlight" aria-pressed="false">bvmap-starlight</button>
   <button data-style="positron" aria-pressed="true">positron</button>
   <button data-style="std" aria-pressed="false">std</button>
 </div>
@@ -258,7 +258,50 @@ const CITIES = {
 // A4 aspect ratio (width/height), matching scripts/render/lib.js's viewportFor().
 const A4_ASPECT = { portrait: 210 / 297, landscape: 297 / 210 };
 
-const STYLE_IDS = ["bvmap-dark", "positron", "std"];
+// bvmap-dark was replaced by bvmap-starlight in the picker (ADR 0014) — same
+// layers, different colors/sprite. Old shared URLs (#...&style=bvmap-dark)
+// are migrated in restoreStateFromHash(); old docs/requests/*.json that name
+// bvmap-dark still render, since stars still hosts that style.
+const STYLE_IDS = ["bvmap-starlight", "positron", "std"];
+
+// --- Detail boost (ADR 0014) ---
+// bvmap is a generalized, tiered tileset: z11–13 tiles are 1:200,000-class
+// data (no buildings at all — the BldA layer only exists from z14), z14–16
+// tiles are 1:25,000-class. A page at z12 therefore prints sparse. The
+// zoom-level shift of ADR 0009 (renderScale: stage the page in a k× bigger
+// container, then shrink the snapshot back) makes MapLibre fetch tiles from
+// log2(k) levels deeper, so a detail page can print with z14 data at its
+// normal physical size. Cost: everything the style draws in px (labels,
+// icons) shrinks by k too — accepted by hfu for now (no compensation).
+const BOOST_STYLES = new Set(["bvmap-starlight"]);
+const BOOST_TARGET_ZOOM = 14; // first zoom whose tiles carry buildings
+// k=4 is +2 zoom levels. Beyond that the canvas (capped at the GPU's max
+// texture size, ~8192 px under SwiftShader/Actions) would leave under ~175 dpi
+// of printed resolution (maplibre-gl-atlas src/canvas-limit.ts).
+const BOOST_MAX_SCALE = 4;
+
+// The zoom MapLibre's fitBounds lands on for `bbox` in an A4 page-sized
+// container (512 px tiles, padding 0) — what the page would print at today.
+function nativePageZoom(bbox, orientation) {
+  const { width, height } = orientation === "landscape" ? { width: 1123, height: 794 } : { width: 794, height: 1123 };
+  const mercY = (lat) => {
+    const s = Math.sin((lat * Math.PI) / 180);
+    return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+  };
+  const fracX = (bbox[2] - bbox[0]) / 360;
+  const fracY = mercY(bbox[1]) - mercY(bbox[3]); // south has the larger y
+  return Math.min(Math.log2(width / (512 * fracX)), Math.log2(height / (512 * fracY)));
+}
+
+// renderScale for a detail page, or undefined when it shouldn't be boosted.
+// k is a power of two so the shift is a whole number of zoom levels, and is
+// chosen from the page's *actual* (fractional) zoom: vector tiles are picked
+// by floor(zoom), so e.g. z11.9 + 2 = 13.9 would still miss the z14 tier.
+function detailBoost(styleId, bbox, orientation) {
+  if (!BOOST_STYLES.has(styleId)) return undefined;
+  const k = Math.min(BOOST_MAX_SCALE, 2 ** Math.ceil(BOOST_TARGET_ZOOM - nativePageZoom(bbox, orientation)));
+  return k > 1 ? { x: k, y: k } : undefined;
+}
 
 const state = {
   style: "positron",
@@ -325,7 +368,11 @@ function restoreStateFromHash() {
   if (params.has("m")) state.rows = Math.min(10, Math.max(1, Number(params.get("m")) || state.rows));
   if (params.has("n")) state.cols = Math.min(10, Math.max(1, Number(params.get("n")) || state.cols));
   if (params.has("o")) state.orientation = params.get("o") === "l" ? "landscape" : "portrait";
-  if (params.has("style") && STYLE_IDS.includes(params.get("style"))) state.style = params.get("style");
+  if (params.has("style")) {
+    // bvmap-dark → bvmap-starlight (ADR 0014): keep previously shared URLs working.
+    const id = params.get("style") === "bvmap-dark" ? "bvmap-starlight" : params.get("style");
+    if (STYLE_IDS.includes(id)) state.style = id;
+  }
   if (params.has("title")) state.title = params.get("title").slice(0, 60);
   if (params.has("excluded")) {
     state.excludedCells = new Set(params.get("excluded").split(",").filter(Boolean));
@@ -565,6 +612,10 @@ function computePages() {
         orientation: state.orientation,
         ref: gridRef, // shown prominently, top-right (ADR 0005)
         title: state.title || undefined,
+        // Detail boost (ADR 0014): same field the overview already uses, so
+        // both render paths (computeSheets() here, atlas-page.html in
+        // Actions) and the request JSON schema need no change.
+        renderScale: detailBoost(state.style, bbox, state.orientation),
       });
     }
   }

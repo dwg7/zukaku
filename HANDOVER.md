@@ -19,7 +19,7 @@ zukakuの印刷パイプラインを[dwg7/maplibre-gl-atlas](https://github.com/
   サーバーを持たず、stars.optgeo.orgのデータをHeadless Chromium(Playwright)+
   MapLibre GL JS v6で直接レンダリングしてPDF化する([ADR 0002](adr/0002-headless-chromium-maplibre-gl-js.md))。
 - 用紙はA4のみ(portrait/landscape切替必須)、当面10ページ程度の規模、選択可能スタイルは
-  `bvmap-dark`(日本国内専用・ベクタ)/`positron`(グローバル・ベクタ)/`std`
+  `bvmap-starlight`(日本国内専用・ベクタ、旧`bvmap-dark`を2026-10-03に置き換え、[ADR 0014](adr/0014-bvmap-detail-boost.md))/`positron`(グローバル・ベクタ)/`std`
   (日本国内専用・ラスタ、[ADR 0010](adr/0010-gsi-std-raster-style.md))の3つ。
   terrainは常に無効化、fill-extrusion・globe投影は使わない
   ([ADR 0004](adr/0004-terrain-and-fill-extrusion-policy.md))。
@@ -49,7 +49,7 @@ zukakuの印刷パイプラインを[dwg7/maplibre-gl-atlas](https://github.com/
 - 概要ページ(A1/A2/B1/B2形式のグリッド参照)、8mm印刷マージン+図郭線+スケールバー+
   方位記号+「Zukaku」ワードマークまで実装済み。都市名は印刷面から削除済み(パン後に
   ズレるため、ADR 0005)。
-- `bvmap-dark`は日本国内専用(ビエンチャンで空白になることを実機確認、CLAUDE.md 3節)。
+- `bvmap-starlight`(旧`bvmap-dark`)は日本国内専用(ビエンチャンで空白になることを実機確認、CLAUDE.md 3節)。
 - **実ブラウザでの目視確認はユーザー自身が実施済み**(ビエンチャン・positron・2×2で
   実際にMake Atlasから本物のPRを起票し、Actionsが正しくレンダリングした)。
 - **「Print in Browser」(ブラウザ内印刷モード)を追加**([ADR 0007](adr/0007-client-side-print-mode.md))。
@@ -249,6 +249,35 @@ PyMuPDFで検証、概要ページのグリッド矩形・ラベル・スケー�
 (上記バグ2)。`docs/index.html`の「Print in Browser」がPlaywright越しに
 `window.print`をスタブして同様に検証できることも確認した(実ブラウザでの
 確認は引き続き未実施)。
+
+### bvmapの印刷を深いズームのタイルで描く(詳細ブースト)、bvmap-darkをbvmap-starlightに置き換え(2026-10-03)
+
+現地調査で「bvmapの印刷は建物が乏しく物足りない」との指摘。詳細は
+[ADR 0014](adr/0014-bvmap-detail-boost.md)・[DECISIONS.md D19](DECISIONS.md)参照。
+
+- **原因はデータ側**: bvmapのタイルは縮尺帯ごと(z11–13は20万分の1帯、
+  z14–16が2.5万分の1帯)で、建物`BldA`は**z14以上にしか存在しない**。
+  z12前後のページでは建物が出ない。
+- **対処**: `renderScale`(ADR 0009)を詳細ページにも自動で付け、z14帯の
+  タイルを取って描く(`docs/index.html`の`detailBoost()`、
+  `k = min(4, 2^ceil(14 − z0))`)。**文字補正はしない**(注記は約1mm=3pt、
+  hfuさんが許容と判断)。対象は`bvmap-starlight`のみ(`BOOST_STYLES`)、
+  概要ページは従来どおり。リクエストJSONのスキーマ・`scripts/render/`・
+  ライブラリは無変更。
+- **スタイル置き換え**: ピッカーの`bvmap-dark`→`bvmap-starlight`。共有URLの
+  `style=bvmap-dark`は読み替え、既存の請求JSONの`bvmap-dark`もそのまま描画できる。
+- **やってみて使えなかった近道**: ソースの`tileSize`(maplibre-gl 6.6では
+  256/128でスタイル適用が止まる)。
+- **当初の見込みの訂正**: キャンバス上限(4096px)で解像度が落ちると見込んだが、
+  検証ハーネスの縮小後の数値を実解像度と取り違えた誤り。実パイプラインは
+  縮小前の全体を埋め込むため、上限4096でも約350dpi相当あり、8192に上げると
+  PDFが約3倍(8.9→24.7MB)・時間も約2.5倍になるだけ。**上限は変更していない**。
+
+**実機検証**: ピッカーを実際に操作してリクエストJSONを生成し、`detailBoost()`が
+z12.6→k=4、z13.6→k=2、z10.6→上限k=4、`positron`は対象外、旧`style=bvmap-dark`の
+URLが読み替えられることを確認。帯広の1×2グリッド(`bvmap-starlight`、k=4)を
+`atlas.js`で描画(約20秒、PDF 8.9MB)し、300dpi相当の5cm四方で街区・建物・注記が
+鮮明であることを目視確認した。
 
 ## 次にやること
 
