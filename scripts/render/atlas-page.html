@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8">
 <title>zukaku atlas render</title>
+<!-- The scale bar is MapLibre's own ScaleControl markup, carried over into the
+     print footer — its bar (borders, text centering) comes from this
+     stylesheet. The old per-page page.html loaded it; atlas-page.html (ADR
+     0013) didn't, so the Actions-rendered PDFs had a bare "50 m" with no bar
+     (found while fixing ADR 0015's crushed-bar issue). -->
+<link rel="stylesheet" href="../../node_modules/maplibre-gl/dist/maplibre-gl.css">
 <!-- maplibre-gl-atlas's build imports the bare specifier "maplibre-gl" (peer
      dependency, not bundled) — resolved here to the same npm-installed copy
      scripts/render/ already uses (node_modules/, not unpkg — this page never
@@ -174,6 +180,7 @@
   const atlasControl = new AtlasControl({
     sheets: () => pages.map(toSheet),
     showButton: false,
+    neatline: false, // same as docs/index.html (ADR 0015)
   });
   map.addControl(atlasControl);
 

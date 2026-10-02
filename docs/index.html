@@ -745,6 +745,10 @@ shareButton.addEventListener("click", () => {
 const atlasControl = new AtlasControl({
   sheets: computeSheets,
   showButton: false,
+  // No black frame around the map (ADR 0015): when the snapshot doesn't fill
+  // its box exactly (letterboxed overview, object-fit: contain) the rule made
+  // the sliver of blank page inside it look like a mistake.
+  neatline: false,
 });
 map.addControl(atlasControl, "top-right");
 
