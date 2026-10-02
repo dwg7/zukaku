@@ -277,7 +277,11 @@ PyMuPDFで検証、概要ページのグリッド矩形・ラベル・スケー�
 z12.6→k=4、z13.6→k=2、z10.6→上限k=4、`positron`は対象外、旧`style=bvmap-dark`の
 URLが読み替えられることを確認。帯広の1×2グリッド(`bvmap-starlight`、k=4)を
 `atlas.js`で描画(約20秒、PDF 8.9MB)し、300dpi相当の5cm四方で街区・建物・注記が
-鮮明であることを目視確認した。
+鮮明であることを目視確認した。さらに実際のGitHub Actions上でも、boost済みの
+請求(1×2グリッド、k=4)をpush・pull_requestの両トリガーで実行し、3ページ・
+8.8MB・詳細ページ2896×4096pxの画像と、ローカルと同一の仕上がりを確認した
+([PR #11](https://github.com/dwg7/zukaku/pull/11)、検証専用のためマージせず
+クローズ・ブランチ削除済み)。
 
 ## 次にやること
 
@@ -287,6 +291,14 @@ MVPとして把握していたタスク・実ブラウザ確認・unopengis/7へ
 3PR計画は**PR 1・PR 2・PR 3すべて完了**——`@dwg7/maplibre-gl-atlas`への
 移行そのものは完了した。残っているのは検証・公開作業のみ:
 
+- **詳細ブースト([ADR 0014](adr/0014-bvmap-detail-boost.md))の紙での確認**:
+  z12→z14(k=4)で注記は約1mm(約3pt)になる。画面上の300dpi相当では鮮明だが、
+  実際に印刷して現場で読めるかはhfuさんの確認待ち。読みにくければ、スタイルの
+  `text-size`等をk倍するスタイル変換(補正)を検討する(`AtlasSheet.style`に
+  `StyleSpecification`を渡せるので、ライブラリ変更なしで`sheets()`内で可能。
+  記号レイヤーは12枚で、大半が`let`+zoom補間の式)。また、ブラウザ内印刷
+  (Print in Browser)でk=4のステージ(3176×4492 CSS px)が低スペック端末で
+  重くならないかも未確認。`#page-estimate`の時間見積もりはブーストを織り込んでいない。
 - `@dwg7/maplibre-gl-atlas`のnpm公開(`NPM_TOKEN`設定、`v0.1.0`タグ)後、
   `docs/index.html`・`scripts/render/atlas-page.html`のimportをunpkg経由に
   切り替え、`docs/vendor/`を削除する(現在は暫定的にビルド成果物を手動配置
