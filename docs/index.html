@@ -181,6 +181,7 @@
 <div id="style-panel" class="panel">
   <h2>Style</h2>
   <button data-style="bvmap-starlight" aria-pressed="false">bvmap-starlight</button>
+  <button data-style="bvmap-koicha-starlight" aria-pressed="false">bvmap-koicha-starlight</button>
   <button data-style="positron" aria-pressed="true">positron</button>
   <button data-style="std" aria-pressed="false">std</button>
 </div>
@@ -262,7 +263,8 @@ const A4_ASPECT = { portrait: 210 / 297, landscape: 297 / 210 };
 // layers, different colors/sprite. Old shared URLs (#...&style=bvmap-dark)
 // are migrated in restoreStateFromHash(); old docs/requests/*.json that name
 // bvmap-dark still render, since stars still hosts that style.
-const STYLE_IDS = ["bvmap-starlight", "positron", "std"];
+// bvmap-koicha-starlight is a variant covering only Hokkaido (added 2026-11-08).
+const STYLE_IDS = ["bvmap-starlight", "bvmap-koicha-starlight", "positron", "std"];
 
 // --- Detail boost (ADR 0014) ---
 // bvmap is a generalized, tiered tileset: z11–13 tiles are 1:200,000-class
@@ -273,7 +275,9 @@ const STYLE_IDS = ["bvmap-starlight", "positron", "std"];
 // log2(k) levels deeper, so a detail page can print with z14 data at its
 // normal physical size. Cost: everything the style draws in px (labels,
 // icons) shrinks by k too — accepted by hfu for now (no compensation).
-const BOOST_STYLES = new Set(["bvmap-starlight"]);
+// Both bvmap-starlight and bvmap-koicha-starlight share the same tiered
+// structure, so both apply detail boost.
+const BOOST_STYLES = new Set(["bvmap-starlight", "bvmap-koicha-starlight"]);
 const BOOST_TARGET_ZOOM = 14; // first zoom whose tiles carry buildings
 // k=4 is +2 zoom levels. Beyond that the canvas (capped at the GPU's max
 // texture size, ~8192 px under SwiftShader/Actions) would leave under ~175 dpi
